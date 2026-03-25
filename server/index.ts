@@ -1,0 +1,86 @@
+/**
+ * Cube Pets Office — Server Entry Point
+ * Express + Socket.IO + REST API + Multi-Agent Orchestration
+ */
+import express from "express";
+import { createServer } from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function startServer() {
+  const app = express();
+  const server = createServer(app);
+
+  // Middleware
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true }));
+
+  // Initialize Socket.IO
+  const { initSocketIO } = await import("./core/socket.js");
+  initSocketIO(server);
+
+  // Seed database
+  const { seedAgents } = await import("./db/seed.js");
+  seedAgents();
+
+  // Initialize agent registry
+  const { registry } = await import("./core/registry.js");
+  registry.init();
+
+  // Recover workflows that were left running across restarts.
+  const db = (await import("./db/index.js")).default;
+  for (const workflow of db.getWorkflows()) {
+    if (workflow.status === "running") {
+      db.updateWorkflow(workflow.id, {
+        status: "failed",
+        results: {
+          ...(workflow.results || {}),
+          last_error: "Server restarted before the workflow completed.",
+          failed_stage: workflow.current_stage || null,
+        },
+      });
+    }
+  }
+
+  // API Routes
+  const agentRoutes = (await import("./routes/agents.js")).default;
+  const workflowRoutes = (await import("./routes/workflows.js")).default;
+  const configRoutes = (await import("./routes/config.js")).default;
+
+  app.use("/api/agents", agentRoutes);
+  app.use("/api/workflows", workflowRoutes);
+  app.use("/api/config", configRoutes);
+
+  // Health check
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // Serve static files from dist/public in production
+  const staticPath =
+    process.env.NODE_ENV === "production"
+      ? path.resolve(__dirname, "public")
+      : path.resolve(__dirname, "..", "dist", "public");
+
+  app.use(express.static(staticPath));
+
+  // Handle client-side routing - serve index.html for all non-API routes
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(staticPath, "index.html"));
+  });
+
+  const port = process.env.PORT || 3000;
+
+  server.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}/`);
+    console.log(`API available at http://localhost:${port}/api/`);
+  });
+}
+
+startServer().catch(console.error);

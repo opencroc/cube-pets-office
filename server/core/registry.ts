@@ -1,0 +1,94 @@
+/**
+ * Agent Registry — Manages all agent instances
+ */
+import { Agent } from './agent.js';
+import db from '../db/index.js';
+
+class AgentRegistry {
+  private agents: Map<string, Agent> = new Map();
+
+  /**
+   * Initialize all agents from database
+   */
+  init(): void {
+    const rows = db.getAgents();
+    for (const row of rows) {
+      const agent = new Agent({
+        id: row.id,
+        name: row.name,
+        department: row.department,
+        role: row.role,
+        managerId: row.manager_id,
+        model: row.model,
+        soulMd: row.soul_md || '',
+      });
+      this.agents.set(row.id, agent);
+    }
+    console.log(`[Registry] Loaded ${this.agents.size} agents`);
+  }
+
+  /**
+   * Get agent by ID
+   */
+  get(id: string): Agent | undefined {
+    return this.agents.get(id);
+  }
+
+  /**
+   * Get CEO agent
+   */
+  getCEO(): Agent | undefined {
+    return this.agents.get('ceo');
+  }
+
+  /**
+   * Get all managers
+   */
+  getManagers(): Agent[] {
+    return Array.from(this.agents.values()).filter((a) => a.config.role === 'manager');
+  }
+
+  /**
+   * Get manager for a department
+   */
+  getManagerByDepartment(dept: string): Agent | undefined {
+    return Array.from(this.agents.values()).find(
+      (a) => a.config.role === 'manager' && a.config.department === dept
+    );
+  }
+
+  /**
+   * Get workers under a manager
+   */
+  getWorkersByManager(managerId: string): Agent[] {
+    return Array.from(this.agents.values()).filter(
+      (a) => a.config.role === 'worker' && a.config.managerId === managerId
+    );
+  }
+
+  /**
+   * Get all agents
+   */
+  getAll(): Agent[] {
+    return Array.from(this.agents.values());
+  }
+
+  /**
+   * Get agents by department
+   */
+  getByDepartment(dept: string): Agent[] {
+    return Array.from(this.agents.values()).filter((a) => a.config.department === dept);
+  }
+
+  /**
+   * Refresh agent from database (after SOUL.md update)
+   */
+  refresh(agentId: string): void {
+    const agent = Agent.fromDB(agentId);
+    if (agent) {
+      this.agents.set(agentId, agent);
+    }
+  }
+}
+
+export const registry = new AgentRegistry();
