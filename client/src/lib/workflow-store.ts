@@ -1,13 +1,9 @@
 /**
- * Workflow Store — State management for multi-agent orchestration UI
- * Manages: workflows, agent states, messages, tasks, real-time events
+ * State management for the multi-agent workflow UI.
  */
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 
-// ============================================================
-// Types
-// ============================================================
 export interface AgentInfo {
   id: string;
   name: string;
@@ -16,7 +12,18 @@ export interface AgentInfo {
   managerId: string | null;
   model: string;
   isActive: boolean;
-  status: 'idle' | 'thinking' | 'executing' | 'reviewing' | 'planning' | 'analyzing' | 'auditing' | 'revising' | 'verifying' | 'summarizing' | 'evaluating';
+  status:
+    | 'idle'
+    | 'thinking'
+    | 'executing'
+    | 'reviewing'
+    | 'planning'
+    | 'analyzing'
+    | 'auditing'
+    | 'revising'
+    | 'verifying'
+    | 'summarizing'
+    | 'evaluating';
 }
 
 export interface WorkflowInfo {
@@ -69,43 +76,69 @@ export interface StageInfo {
   label: string;
 }
 
-export type PanelView = 'directive' | 'org' | 'workflow' | 'review' | 'history';
+export interface AgentMemoryEntry {
+  timestamp: string;
+  workflowId: string | null;
+  stage: string | null;
+  type: 'message' | 'llm_prompt' | 'llm_response' | 'workflow_summary';
+  direction?: 'inbound' | 'outbound';
+  agentId?: string;
+  otherAgentId?: string;
+  preview: string;
+  content: string;
+  metadata?: any;
+}
+
+export interface AgentMemorySummary {
+  workflowId: string;
+  createdAt: string;
+  directive: string;
+  status: string;
+  role: string;
+  stage: string | null;
+  summary: string;
+  keywords: string[];
+}
+
+export type PanelView = 'directive' | 'org' | 'workflow' | 'review' | 'history' | 'memory';
 
 interface WorkflowState {
-  // Connection
   socket: Socket | null;
   connected: boolean;
 
-  // Agents
   agents: AgentInfo[];
   agentStatuses: Record<string, string>;
 
-  // Workflows
   currentWorkflowId: string | null;
   workflows: WorkflowInfo[];
   currentWorkflow: WorkflowInfo | null;
 
-  // Tasks & Messages
   tasks: TaskInfo[];
   messages: MessageInfo[];
+  agentMemoryRecent: AgentMemoryEntry[];
+  agentMemorySearchResults: AgentMemorySummary[];
 
-  // Stages
   stages: StageInfo[];
 
-  // UI
   isWorkflowPanelOpen: boolean;
   activeView: PanelView;
   isSubmitting: boolean;
+  isMemoryLoading: boolean;
+  selectedMemoryAgentId: string | null;
+  memoryQuery: string;
   eventLog: Array<{ type: string; data: any; timestamp: string }>;
 
-  // Actions
   initSocket: () => void;
   disconnectSocket: () => void;
   fetchAgents: () => Promise<void>;
   fetchStages: () => Promise<void>;
   fetchWorkflows: () => Promise<void>;
   fetchWorkflowDetail: (id: string) => Promise<void>;
+  fetchAgentRecentMemory: (agentId: string, workflowId?: string | null, limit?: number) => Promise<void>;
+  searchAgentMemory: (agentId: string, query: string, topK?: number) => Promise<void>;
   submitDirective: (directive: string) => Promise<string | null>;
+  setSelectedMemoryAgent: (id: string | null) => void;
+  setMemoryQuery: (query: string) => void;
   setActiveView: (view: PanelView) => void;
   toggleWorkflowPanel: () => void;
   openWorkflowPanel: () => void;
@@ -113,7 +146,6 @@ interface WorkflowState {
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
-  // Initial state
   socket: null,
   connected: false,
   agents: [],
@@ -123,13 +155,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   currentWorkflow: null,
   tasks: [],
   messages: [],
+  agentMemoryRecent: [],
+  agentMemorySearchResults: [],
   stages: [],
   isWorkflowPanelOpen: false,
   activeView: 'directive',
   isSubmitting: false,
+  isMemoryLoading: false,
+  selectedMemoryAgentId: null,
+  memoryQuery: '',
   eventLog: [],
 
-  // Initialize WebSocket connection
   initSocket: () => {
     const existing = get().socket;
     if (existing?.connected) return;
@@ -151,7 +187,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     socket.on('agent_event', (event: any) => {
       const state = get();
 
-      // Log event
       set({
         eventLog: [
           ...state.eventLog.slice(-100),
@@ -162,36 +197,31 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       switch (event.type) {
         case 'stage_change': {
           if (state.currentWorkflowId === event.workflowId) {
-            set((s) => ({
-              currentWorkflow: s.currentWorkflow
-                ? { ...s.currentWorkflow, current_stage: event.stage, status: 'running' }
+            set((store) => ({
+              currentWorkflow: store.currentWorkflow
+                ? { ...store.currentWorkflow, current_stage: event.stage, status: 'running' }
                 : null,
             }));
           }
-          // Update in workflows list
-          set((s) => ({
-            workflows: s.workflows.map((w) =>
-              w.id === event.workflowId ? { ...w, current_stage: event.stage, status: 'running' } : w
+
+          set((store) => ({
+            workflows: store.workflows.map((workflow) =>
+              workflow.id === event.workflowId
+                ? { ...workflow, current_stage: event.stage, status: 'running' }
+                : workflow
             ),
           }));
           break;
         }
 
         case 'agent_active': {
-          set((s) => ({
-            agentStatuses: { ...s.agentStatuses, [event.agentId]: event.action },
+          set((store) => ({
+            agentStatuses: { ...store.agentStatuses, [event.agentId]: event.action },
           }));
           break;
         }
 
-        case 'message_sent': {
-          // Auto-refresh messages if viewing this workflow
-          if (state.currentWorkflowId === event.workflowId) {
-            get().fetchWorkflowDetail(event.workflowId);
-          }
-          break;
-        }
-
+        case 'message_sent':
         case 'score_assigned': {
           if (state.currentWorkflowId === event.workflowId) {
             get().fetchWorkflowDetail(event.workflowId);
@@ -201,9 +231,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
         case 'task_update': {
           if (state.currentWorkflowId === event.workflowId) {
-            set((s) => ({
-              tasks: s.tasks.map((t) =>
-                t.id === event.taskId ? { ...t, status: event.status } : t
+            set((store) => ({
+              tasks: store.tasks.map((task) =>
+                task.id === event.taskId ? { ...task, status: event.status } : task
               ),
             }));
           }
@@ -211,15 +241,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
 
         case 'workflow_complete': {
-          set((s) => ({
-            workflows: s.workflows.map((w) =>
-              w.id === event.workflowId ? { ...w, status: 'completed' } : w
+          set((store) => ({
+            workflows: store.workflows.map((workflow) =>
+              workflow.id === event.workflowId ? { ...workflow, status: 'completed' } : workflow
             ),
             currentWorkflow:
-              s.currentWorkflow && s.currentWorkflow.id === event.workflowId
-                ? { ...s.currentWorkflow, status: 'completed' }
-                : s.currentWorkflow,
+              store.currentWorkflow && store.currentWorkflow.id === event.workflowId
+                ? { ...store.currentWorkflow, status: 'completed' }
+                : store.currentWorkflow,
           }));
+
           if (state.currentWorkflowId === event.workflowId) {
             get().fetchWorkflowDetail(event.workflowId);
           }
@@ -227,25 +258,26 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
 
         case 'workflow_error': {
-          set((s) => ({
-            workflows: s.workflows.map((w) =>
-              w.id === event.workflowId
+          set((store) => ({
+            workflows: store.workflows.map((workflow) =>
+              workflow.id === event.workflowId
                 ? {
-                    ...w,
+                    ...workflow,
                     status: 'failed',
-                    results: { ...(w.results || {}), last_error: event.error },
+                    results: { ...(workflow.results || {}), last_error: event.error },
                   }
-                : w
+                : workflow
             ),
             currentWorkflow:
-              s.currentWorkflow && s.currentWorkflow.id === event.workflowId
+              store.currentWorkflow && store.currentWorkflow.id === event.workflowId
                 ? {
-                    ...s.currentWorkflow,
+                    ...store.currentWorkflow,
                     status: 'failed',
-                    results: { ...(s.currentWorkflow.results || {}), last_error: event.error },
+                    results: { ...(store.currentWorkflow.results || {}), last_error: event.error },
                   }
-                : s.currentWorkflow,
+                : store.currentWorkflow,
           }));
+
           if (state.currentWorkflowId === event.workflowId) {
             get().fetchWorkflowDetail(event.workflowId);
           }
@@ -265,15 +297,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Fetch all agents
   fetchAgents: async () => {
     try {
       const res = await fetch('/api/agents');
       const data = await res.json();
-      const agents = (data.agents || []).map((a: any) => ({
-        ...a,
-        isActive: a.isActive ?? true,
-        status: get().agentStatuses[a.id] || 'idle',
+      const agents = (data.agents || []).map((agent: any) => ({
+        ...agent,
+        isActive: agent.isActive ?? true,
+        status: get().agentStatuses[agent.id] || 'idle',
       }));
       set({ agents });
     } catch (err) {
@@ -281,7 +312,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Fetch stage definitions
   fetchStages: async () => {
     try {
       const res = await fetch('/api/config/stages');
@@ -292,7 +322,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Fetch all workflows
   fetchWorkflows: async () => {
     try {
       const res = await fetch('/api/workflows');
@@ -303,7 +332,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Fetch workflow detail
   fetchWorkflowDetail: async (id: string) => {
     try {
       const res = await fetch(`/api/workflows/${id}`);
@@ -319,9 +347,57 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Submit a new directive
+  fetchAgentRecentMemory: async (
+    agentId: string,
+    workflowId?: string | null,
+    limit: number = 10
+  ) => {
+    if (!agentId) return;
+    set({ isMemoryLoading: true });
+
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', String(limit));
+      if (workflowId) {
+        params.set('workflowId', workflowId);
+      }
+
+      const res = await fetch(`/api/agents/${agentId}/memory/recent?${params.toString()}`);
+      const data = await res.json();
+      set({
+        agentMemoryRecent: data.entries || [],
+        isMemoryLoading: false,
+      });
+    } catch (err) {
+      console.error('[Store] Failed to fetch recent memory:', err);
+      set({ agentMemoryRecent: [], isMemoryLoading: false });
+    }
+  },
+
+  searchAgentMemory: async (agentId: string, query: string, topK: number = 5) => {
+    if (!agentId) return;
+    set({ isMemoryLoading: true, memoryQuery: query });
+
+    try {
+      const params = new URLSearchParams();
+      params.set('query', query);
+      params.set('topK', String(topK));
+
+      const res = await fetch(`/api/agents/${agentId}/memory/search?${params.toString()}`);
+      const data = await res.json();
+      set({
+        agentMemorySearchResults: data.memories || [],
+        isMemoryLoading: false,
+      });
+    } catch (err) {
+      console.error('[Store] Failed to search memory:', err);
+      set({ agentMemorySearchResults: [], isMemoryLoading: false });
+    }
+  },
+
   submitDirective: async (directive: string) => {
     set({ isSubmitting: true });
+
     try {
       const res = await fetch('/api/workflows', {
         method: 'POST',
@@ -329,17 +405,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         body: JSON.stringify({ directive }),
       });
       const data = await res.json();
+
       if (data.workflowId) {
         set({
           currentWorkflowId: data.workflowId,
           activeView: 'workflow',
           isSubmitting: false,
         });
-        // Fetch initial state
         await get().fetchWorkflowDetail(data.workflowId);
         await get().fetchWorkflows();
         return data.workflowId;
       }
+
       set({ isSubmitting: false });
       return null;
     } catch (err) {
@@ -349,14 +426,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
+  setSelectedMemoryAgent: (id) =>
+    set({
+      selectedMemoryAgentId: id,
+      agentMemoryRecent: [],
+      agentMemorySearchResults: [],
+    }),
+
+  setMemoryQuery: (query) => set({ memoryQuery: query }),
   setActiveView: (view) => set({ activeView: view }),
-  toggleWorkflowPanel: () => set((s) => ({ isWorkflowPanelOpen: !s.isWorkflowPanelOpen })),
+  toggleWorkflowPanel: () => set((state) => ({ isWorkflowPanelOpen: !state.isWorkflowPanelOpen })),
   openWorkflowPanel: () => set({ isWorkflowPanelOpen: true }),
   setCurrentWorkflow: (id) => {
     if (id) {
       get().fetchWorkflowDetail(id);
     } else {
-      set({ currentWorkflowId: null, currentWorkflow: null, tasks: [], messages: [] });
+      set({
+        currentWorkflowId: null,
+        currentWorkflow: null,
+        tasks: [],
+        messages: [],
+      });
     }
   },
 }));

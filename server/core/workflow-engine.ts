@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import db from '../db/index.js';
 import type { TaskRow } from '../db/index.js';
+import { sessionStore } from '../memory/session-store.js';
 import { registry } from './registry.js';
 import { messageBus } from './message-bus.js';
 import { emitEvent } from './socket.js';
@@ -111,6 +112,7 @@ export class WorkflowEngine {
         status: 'completed',
         completed_at: new Date().toISOString(),
       });
+      sessionStore.materializeWorkflowMemories(workflowId);
 
       emitEvent({
         type: 'workflow_complete',
@@ -129,6 +131,7 @@ export class WorkflowEngine {
           failed_stage: wf?.current_stage || null,
         },
       });
+      sessionStore.materializeWorkflowMemories(workflowId);
       emitEvent({ type: 'workflow_error', workflowId, error: err.message });
       throw err;
     }
@@ -176,7 +179,7 @@ ${directive}
       "direction": "给该部门的明确方向"
     }
   ]
-}`);
+}`, undefined, { workflowId, stage: 'direction' });
 
     const departments = Array.isArray(analysis.departments) ? analysis.departments : [];
     const deptIds = departments.map((item) => item.id);
@@ -251,7 +254,7 @@ ${workerList}
       "description": "具体任务说明"
     }
   ]
-}`);
+}`, undefined, { workflowId, stage: 'planning' });
 
         for (const task of plan.tasks || []) {
           const worker = workers.find((item) => item.config.id === task.worker_id);
@@ -340,7 +343,7 @@ ${task.description}
 要求：
 - 不要泛泛而谈
 - 尽量给出结构化建议、步骤、示例或判断依据
-- 输出应让经理可以直接评审`);
+- 输出应让经理可以直接评审`, undefined, { workflowId, stage: 'execution' });
 
           db.updateTask(task.id, {
             deliverable,
@@ -431,7 +434,7 @@ ${task.deliverable}
   "format": 0,
   "total": 0,
   "feedback": "具体指出优点、问题和修改建议"
-}`);
+}`, undefined, { workflowId, stage: 'review' });
 
             const accuracy = Math.min(5, Math.max(0, Math.round(score.accuracy || 0)));
             const completeness = Math.min(5, Math.max(0, Math.round(score.completeness || 0)));
@@ -526,7 +529,7 @@ ${task.deliverable}
 待审内容：
 ${taskSummary}
 
-请输出简洁、具体的审计意见。`);
+请输出简洁、具体的审计意见。`, undefined, { workflowId, stage: 'meta_audit' });
 
         auditResults.push(`[Warden 合规审计]\n${wardenAudit}`);
       } catch (err: any) {
@@ -548,7 +551,7 @@ ${taskSummary}
 待审内容：
 ${taskSummary}
 
-请输出简洁、具体的质量分析意见。`);
+请输出简洁、具体的质量分析意见。`, undefined, { workflowId, stage: 'meta_audit' });
 
         auditResults.push(`[Prism 质量分析]\n${prismAudit}`);
       } catch (err: any) {
@@ -634,7 +637,7 @@ ${task.total_score}/20
 收到的反馈：
 ${combinedFeedback}
 
-请输出完整的 v2 版本，重点修正被指出的问题。`);
+请输出完整的 v2 版本，重点修正被指出的问题。`, undefined, { workflowId, stage: 'revision' });
 
           db.updateTask(task.id, {
             deliverable_v2: revised,
@@ -720,7 +723,7 @@ ${task.deliverable_v2}
   ],
   "unaddressed_ratio": 0.0,
   "verdict": "pass"
-}`);
+}`, undefined, { workflowId, stage: 'verify' });
 
           db.updateTask(task.id, {
             verify_result: result,
@@ -750,7 +753,7 @@ ${unresolved}
 你的 v2 版本：
 ${task.deliverable_v2}
 
-请输出完整的 v3 版本。`);
+请输出完整的 v3 版本。`, undefined, { workflowId, stage: 'verify' });
 
               db.updateTask(task.id, {
                 deliverable_v3: v3,
@@ -825,7 +828,7 @@ ${taskResults}
 1. 本部门完成了什么
 2. 最重要的成果
 3. 还存在什么问题或风险
-4. 后续建议`);
+4. 后续建议`, undefined, { workflowId, stage: 'summary' });
 
           summaries.push(`## ${deptId} 部门（${manager.config.name}）\n\n${summary}`);
 
@@ -884,7 +887,7 @@ ${summaryText}
 1. 整体判断
 2. 各部门表现亮点
 3. 当前短板或风险
-4. 下一步行动建议`);
+4. 下一步行动建议`, undefined, { workflowId, stage: 'feedback' });
 
       const results = wf?.results || {};
       db.updateWorkflow(workflowId, {

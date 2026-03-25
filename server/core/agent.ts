@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 import db from '../db/index.js';
+import { sessionStore } from '../memory/session-store.js';
 import { callLLM, callLLMJson } from './llm-client.js';
 import { messageBus } from './message-bus.js';
 import { emitEvent } from './socket.js';
@@ -21,6 +22,11 @@ export interface AgentConfig {
   managerId: string | null;
   model: string;
   soulMd: string;
+}
+
+export interface AgentInvokeOptions {
+  workflowId?: string;
+  stage?: string;
 }
 
 export class Agent {
@@ -51,7 +57,7 @@ export class Agent {
   /**
    * Invoke the LLM with the agent identity and optional context.
    */
-  async invoke(prompt: string, context?: string[]): Promise<string> {
+  async invoke(prompt: string, context?: string[], options: AgentInvokeOptions = {}): Promise<string> {
     emitEvent({
       type: 'agent_active',
       agentId: this.config.id,
@@ -61,6 +67,11 @@ export class Agent {
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: this.buildSystemPrompt() },
     ];
+
+    const memoryContext = sessionStore.buildPromptContext(this.config.id, prompt, options.workflowId);
+    for (const ctx of memoryContext) {
+      messages.push({ role: 'user', content: ctx });
+    }
 
     if (context && context.length > 0) {
       for (const ctx of context) {
@@ -81,6 +92,12 @@ export class Agent {
       agentId: this.config.id,
       action: 'idle',
     });
+    sessionStore.appendLLMExchange(this.config.id, {
+      workflowId: options.workflowId,
+      stage: options.stage,
+      prompt,
+      response: response.content,
+    });
 
     return response.content;
   }
@@ -88,7 +105,11 @@ export class Agent {
   /**
    * Invoke the LLM and require a JSON response.
    */
-  async invokeJson<T = any>(prompt: string, context?: string[]): Promise<T> {
+  async invokeJson<T = any>(
+    prompt: string,
+    context?: string[],
+    options: AgentInvokeOptions = {}
+  ): Promise<T> {
     emitEvent({
       type: 'agent_active',
       agentId: this.config.id,
@@ -106,6 +127,11 @@ export class Agent {
 - 不要输出 JSON 以外的任何解释文字`,
       },
     ];
+
+    const memoryContext = sessionStore.buildPromptContext(this.config.id, prompt, options.workflowId);
+    for (const ctx of memoryContext) {
+      messages.push({ role: 'user', content: ctx });
+    }
 
     if (context && context.length > 0) {
       for (const ctx of context) {
@@ -125,6 +151,12 @@ export class Agent {
       type: 'agent_active',
       agentId: this.config.id,
       action: 'idle',
+    });
+    sessionStore.appendLLMExchange(this.config.id, {
+      workflowId: options.workflowId,
+      stage: options.stage,
+      prompt,
+      response: JSON.stringify(result, null, 2),
     });
 
     return result;

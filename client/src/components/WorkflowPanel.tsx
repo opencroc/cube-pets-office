@@ -1,10 +1,8 @@
-/**
- * Multi-agent workflow dashboard.
- */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
+  BookOpenText,
   Brain,
   CheckCircle2,
   ChevronRight,
@@ -13,6 +11,7 @@ import {
   History,
   Loader2,
   Network,
+  Search,
   Send,
   Shield,
   Star,
@@ -22,6 +21,8 @@ import {
 
 import {
   useWorkflowStore,
+  type AgentMemoryEntry,
+  type AgentMemorySummary,
   type PanelView,
   type StageInfo,
   type TaskInfo,
@@ -35,7 +36,7 @@ const DEPARTMENT_NAMES: Record<string, string> = {
 };
 
 const DEPARTMENT_ICONS: Record<string, string> = {
-  game: 'GE',
+  game: 'GM',
   ai: 'AI',
   life: 'LF',
   meta: 'MT',
@@ -69,6 +70,13 @@ const STATUS_LABELS: Record<string, string> = {
   evaluating: '评估中',
 };
 
+const WORKFLOW_STATUS_LABELS: Record<string, string> = {
+  pending: '等待中',
+  running: '运行中',
+  completed: '已完成',
+  failed: '失败',
+};
+
 function getTaskStatusLabel(status: string): string {
   return (
     {
@@ -83,6 +91,39 @@ function getTaskStatusLabel(status: string): string {
       failed: '失败',
     }[status] || status
   );
+}
+
+function getMemoryTypeLabel(type: AgentMemoryEntry['type']): string {
+  return (
+    {
+      message: '消息',
+      llm_prompt: '提示词',
+      llm_response: '模型响应',
+      workflow_summary: '工作流总结',
+    }[type] || type
+  );
+}
+
+function getMemoryDirectionLabel(direction?: AgentMemoryEntry['direction']): string {
+  return direction === 'inbound' ? '收到' : direction === 'outbound' ? '发出' : '';
+}
+
+function getWorkflowStatusClass(status: string): string {
+  switch (status) {
+    case 'running':
+      return 'bg-blue-100 text-blue-700';
+    case 'completed':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'failed':
+      return 'bg-red-100 text-red-700';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+function formatTime(value: string | null | undefined): string {
+  if (!value) return '--';
+  return new Date(value).toLocaleString('zh-CN');
 }
 
 function StageProgressBar({
@@ -105,7 +146,7 @@ function StageProgressBar({
         else if (idx === currentIdx) stageStatus = 'active';
 
         return (
-          <div key={stage.id} className="flex items-center shrink-0">
+          <div key={stage.id} className="flex shrink-0 items-center">
             <div
               className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium transition-all ${
                 stageStatus === 'done'
@@ -139,18 +180,19 @@ function DirectiveView() {
   const [directive, setDirective] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const examples = [
+    '本周聚焦用户增长，请各部门制定具体行动方案。',
+    '分析竞品最新动态，并制定我们的应对策略。',
+    '优化核心产品体验，提升用户留存与复访。',
+    '策划一次跨部门协作的新活动，兼顾传播与转化。',
+  ];
+
   const handleSubmit = async () => {
     if (!directive.trim() || isSubmitting) return;
     await submitDirective(directive.trim());
     setDirective('');
+    inputRef.current?.focus();
   };
-
-  const examples = [
-    '本周聚焦用户增长，请各部门制定具体行动方案',
-    '分析竞品最新动态，并制定我们的应对策略',
-    '优化核心产品体验，提升用户留存与复访',
-    '策划一次跨部门协作的新活动，兼顾传播与转化',
-  ];
 
   return (
     <div className="flex h-full flex-col">
@@ -160,7 +202,7 @@ function DirectiveView() {
           发布战略指令
         </h3>
         <p className="mt-0.5 text-[10px] text-[#8B7355]">
-          输入一条指令，系统会由 CEO 自动拆解并分发给相关部门执行。
+          输入一条指令，系统会由 CEO 自动拆解，并分发给相关部门执行。
         </p>
       </div>
 
@@ -179,7 +221,6 @@ function DirectiveView() {
             ))}
           </div>
         </div>
-
         <div className="rounded-xl border border-[#E8DDD0] bg-gradient-to-br from-[#F8F4F0] to-[#F0E8E0] p-3">
           <p className="mb-2 text-[10px] font-bold text-[#3A2A1A]">十阶段工作流</p>
           <div className="grid grid-cols-2 gap-1 text-[9px] text-[#5A4A3A]">
@@ -187,10 +228,10 @@ function DirectiveView() {
               ['1. 方向下发', 'CEO 判断需要哪些部门参与'],
               ['2. 任务规划', '经理拆解任务并指派成员'],
               ['3. 执行任务', 'Worker 产出第一版结果'],
-              ['4. 评审打分', '经理按四维度给分'],
-              ['5. 元审计', '审查角色边界与内容质量'],
-              ['6. 修订改进', '低分结果进入修订'],
-              ['7. 验证确认', '经理确认反馈是否解决'],
+              ['4. 评审打分', '经理按四维标准打分'],
+              ['5. 元审计', '检查角色边界与内容质量'],
+              ['6. 修订改进', '低分结果进入修订回合'],
+              ['7. 验证确认', '经理确认问题是否解决'],
               ['8. 部门汇总', '经理向 CEO 汇总成果'],
               ['9. CEO 反馈', '给出整体复盘与建议'],
               ['10. 自动进化', '根据弱项更新 SOUL.md'],
@@ -212,7 +253,7 @@ function DirectiveView() {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              handleSubmit();
+              void handleSubmit();
             }
           }}
           placeholder="输入战略指令..."
@@ -220,7 +261,7 @@ function DirectiveView() {
           className="w-full resize-none rounded-xl border border-[#F0E8E0] bg-[#F8F4F0] px-3 py-2 text-sm text-[#3A2A1A] placeholder-[#C4B5A0] transition-all focus:border-[#D4845A]/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D4845A]/20"
         />
         <button
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={!directive.trim() || isSubmitting}
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D4845A] to-[#E4946A] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:from-[#C07050] hover:to-[#D0845A] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -242,10 +283,14 @@ function DirectiveView() {
 }
 
 function OrgTreeView() {
-  const { agents, agentStatuses } = useWorkflowStore();
-
+  const { agents, agentStatuses, setActiveView, setSelectedMemoryAgent } = useWorkflowStore();
   const ceo = agents.find((agent) => agent.role === 'ceo');
   const managers = agents.filter((agent) => agent.role === 'manager');
+
+  const openMemory = (agentId: string) => {
+    setSelectedMemoryAgent(agentId);
+    setActiveView('memory');
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -254,13 +299,18 @@ function OrgTreeView() {
           <Network className="h-4 w-4 text-indigo-500" />
           组织结构
         </h3>
-        <p className="mt-0.5 text-[10px] text-[#8B7355]">18 个智能体，4 个部门，3 层协作关系。</p>
+        <p className="mt-0.5 text-[10px] text-[#8B7355]">
+          点击任意 Agent，可直接查看它的近期记忆和历史经验。
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {ceo && (
           <div className="mb-4">
-            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-2">
+            <button
+              onClick={() => openMemory(ceo.id)}
+              className="flex w-full items-center gap-2 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-2 text-left transition-colors hover:from-amber-100 hover:to-orange-100"
+            >
               <div
                 className={`h-2 w-2 rounded-full ${
                   AGENT_STATUS_COLORS[agentStatuses[ceo.id] || 'idle']
@@ -270,7 +320,7 @@ function OrgTreeView() {
               <span className="ml-auto text-[9px] text-amber-600">
                 {STATUS_LABELS[agentStatuses[ceo.id] || 'idle'] || '空闲'}
               </span>
-            </div>
+            </button>
           </div>
         )}
 
@@ -278,18 +328,20 @@ function OrgTreeView() {
           const workers = agents.filter(
             (agent) => agent.managerId === manager.id && agent.role === 'worker'
           );
-          const dept = manager.department;
 
           return (
             <div key={manager.id} className="mb-3">
-              <div className="flex items-center gap-2 rounded-xl border border-[#E8DDD0] bg-[#F8F4F0] px-3 py-2">
+              <button
+                onClick={() => openMemory(manager.id)}
+                className="flex w-full items-center gap-2 rounded-xl border border-[#E8DDD0] bg-[#F8F4F0] px-3 py-2 text-left transition-colors hover:bg-[#F0E8E0]"
+              >
                 <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-[10px] font-bold text-[#8B7355]">
-                  {DEPARTMENT_ICONS[dept] || 'DP'}
+                  {DEPARTMENT_ICONS[manager.department] || 'DP'}
                 </span>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-[#3A2A1A]">
-                      {DEPARTMENT_NAMES[dept] || dept}
+                      {DEPARTMENT_NAMES[manager.department] || manager.department}
                     </span>
                     <div
                       className={`h-1.5 w-1.5 rounded-full ${
@@ -302,13 +354,14 @@ function OrgTreeView() {
                 <span className="text-[9px] text-[#8B7355]">
                   {STATUS_LABELS[agentStatuses[manager.id] || 'idle'] || '空闲'}
                 </span>
-              </div>
+              </button>
 
               <div className="ml-4 mt-1 space-y-1">
                 {workers.map((worker) => (
-                  <div
+                  <button
                     key={worker.id}
-                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-[#F8F4F0]"
+                    onClick={() => openMemory(worker.id)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-[#F8F4F0]"
                   >
                     <div
                       className={`h-1.5 w-1.5 rounded-full ${
@@ -319,9 +372,9 @@ function OrgTreeView() {
                     <span className="ml-auto text-[9px] text-[#B0A090]">
                       {agentStatuses[worker.id] !== 'idle'
                         ? STATUS_LABELS[agentStatuses[worker.id]] || agentStatuses[worker.id]
-                        : ''}
+                        : '查看记忆'}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -339,7 +392,7 @@ function WorkflowProgressView() {
   useEffect(() => {
     if (!currentWorkflowId || currentWorkflow?.status !== 'running') return;
     const timer = setInterval(() => {
-      fetchWorkflowDetail(currentWorkflowId);
+      void fetchWorkflowDetail(currentWorkflowId);
     }, 3000);
     return () => clearInterval(timer);
   }, [currentWorkflowId, currentWorkflow?.status, fetchWorkflowDetail]);
@@ -349,7 +402,9 @@ function WorkflowProgressView() {
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
         <BarChart3 className="mb-3 h-10 w-10 text-[#C4B5A0]" />
         <p className="text-sm font-medium text-[#5A4A3A]">暂无活跃工作流</p>
-        <p className="mt-1 text-[10px] text-[#8B7355]">发布一条战略指令后，这里会显示执行进度。</p>
+        <p className="mt-1 text-[10px] text-[#8B7355]">
+          发布一条战略指令后，这里会显示实时执行进度。
+        </p>
       </div>
     );
   }
@@ -393,23 +448,11 @@ function WorkflowProgressView() {
             工作流进度
           </h3>
           <span
-            className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${
-              currentWorkflow.status === 'running'
-                ? 'bg-blue-100 text-blue-700'
-                : currentWorkflow.status === 'completed'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : currentWorkflow.status === 'failed'
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-gray-100 text-gray-600'
-            }`}
+            className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${getWorkflowStatusClass(
+              currentWorkflow.status
+            )}`}
           >
-            {currentWorkflow.status === 'running'
-              ? '运行中'
-              : currentWorkflow.status === 'completed'
-                ? '已完成'
-                : currentWorkflow.status === 'failed'
-                  ? '失败'
-                  : '等待中'}
+            {WORKFLOW_STATUS_LABELS[currentWorkflow.status] || currentWorkflow.status}
           </span>
         </div>
         <p className="mt-1 line-clamp-2 text-[10px] text-[#8B7355]">{currentWorkflow.directive}</p>
@@ -431,9 +474,6 @@ function WorkflowProgressView() {
             <div className="whitespace-pre-wrap text-[10px] leading-5 text-red-700">
               {currentWorkflow.results?.last_error || '出现了未知错误，请查看服务端日志。'}
             </div>
-            <p className="mt-2 text-[9px] text-red-600">
-              如果报错与模型调用有关，优先检查 `.env` 中的 LLM 配置和备用供应商是否可用。
-            </p>
           </div>
         )}
 
@@ -449,10 +489,7 @@ function WorkflowProgressView() {
             </div>
             <div className="space-y-1.5">
               {deptTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="flex items-start gap-2 rounded-lg bg-white/60 px-2.5 py-2"
-                >
+                <div key={task.id} className="flex items-start gap-2 rounded-lg bg-white/60 px-2.5 py-2">
                   {statusIcon(task.status)}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -486,17 +523,15 @@ function WorkflowProgressView() {
           </div>
         ))}
 
-        {currentWorkflow.status === 'completed' && currentWorkflow.results && (
+        {currentWorkflow.status === 'completed' && currentWorkflow.results?.ceo_feedback && (
           <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 p-3">
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-emerald-800">
               <CheckCircle2 className="h-3.5 w-3.5" />
               工作流已完成
             </h4>
-            {currentWorkflow.results.ceo_feedback && (
-              <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-[10px] text-emerald-700">
-                {currentWorkflow.results.ceo_feedback}
-              </div>
-            )}
+            <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-[10px] text-emerald-700">
+              {currentWorkflow.results.ceo_feedback}
+            </div>
           </div>
         )}
 
@@ -504,23 +539,20 @@ function WorkflowProgressView() {
           <div>
             <h4 className="mb-1.5 text-[10px] font-bold text-[#8B7355]">最近消息</h4>
             <div className="max-h-40 space-y-1 overflow-y-auto">
-              {messages
-                .slice(-10)
-                .reverse()
-                .map((msg) => (
-                  <div
-                    key={msg.id}
-                    className="rounded-lg bg-white/40 px-2 py-1.5 text-[9px] text-[#5A4A3A]"
-                  >
-                    <span className="font-medium text-[#D4845A]">{msg.from_agent}</span>
-                    <span className="text-[#B0A090]"> → </span>
-                    <span className="font-medium text-[#3A7A5A]">{msg.to_agent}</span>
-                    <span className="text-[#B0A090]"> [{msg.stage}]</span>
-                    <p className="mt-0.5 line-clamp-2 text-[#8B7355]">
-                      {msg.content.substring(0, 100)}...
-                    </p>
-                  </div>
-                ))}
+              {messages.slice(-10).reverse().map((msg) => (
+                <div
+                  key={msg.id}
+                  className="rounded-lg bg-white/40 px-2 py-1.5 text-[9px] text-[#5A4A3A]"
+                >
+                  <span className="font-medium text-[#D4845A]">{msg.from_agent}</span>
+                  <span className="text-[#B0A090]"> → </span>
+                  <span className="font-medium text-[#3A7A5A]">{msg.to_agent}</span>
+                  <span className="text-[#B0A090]"> [{msg.stage}]</span>
+                  <p className="mt-0.5 line-clamp-2 text-[#8B7355]">
+                    {msg.content.substring(0, 100)}...
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -538,7 +570,9 @@ function ReviewView() {
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
         <Star className="mb-3 h-10 w-10 text-[#C4B5A0]" />
         <p className="text-sm font-medium text-[#5A4A3A]">暂无评审数据</p>
-        <p className="mt-1 text-[10px] text-[#8B7355]">进入评审阶段后，这里会展示每项任务的得分。</p>
+        <p className="mt-1 text-[10px] text-[#8B7355]">
+          进入评审阶段后，这里会展示每项任务的得分。
+        </p>
       </div>
     );
   }
@@ -581,7 +615,7 @@ function ReviewView() {
                   <span className="w-12 text-[9px] text-[#8B7355]">{label}</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
                     <div
-                      className={`h-full rounded-full ${color} transition-all duration-500`}
+                      className={`h-full rounded-full ${color}`}
                       style={{ width: `${((score || 0) / 5) * 100}%` }}
                     />
                   </div>
@@ -598,30 +632,235 @@ function ReviewView() {
                 {task.manager_feedback.substring(0, 200)}
               </div>
             )}
-
-            <div className="mt-2 flex items-center gap-1">
-              {[1, 2, 3].map((version) => {
-                const hasVersion =
-                  version === 1
-                    ? task.deliverable
-                    : version === 2
-                      ? task.deliverable_v2
-                      : task.deliverable_v3;
-
-                return (
-                  <span
-                    key={version}
-                    className={`rounded px-1.5 py-0.5 text-[8px] ${
-                      hasVersion ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
-                    }`}
-                  >
-                    v{version}
-                  </span>
-                );
-              })}
-            </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function MemoryResultCard({ item }: { item: AgentMemorySummary }) {
+  return (
+    <div className="rounded-xl border border-[#E8DDD0] bg-white/80 p-3 shadow-sm">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="rounded-full bg-[#F0E8E0] px-2 py-0.5 text-[9px] font-medium text-[#7A6147]">
+          {item.status}
+        </span>
+        <span className="text-[9px] text-[#B0A090]">{formatTime(item.createdAt)}</span>
+      </div>
+      <p className="text-[10px] font-semibold text-[#3A2A1A]">{item.directive}</p>
+      <p className="mt-1 line-clamp-5 whitespace-pre-wrap text-[9px] leading-5 text-[#6B5A4A]">
+        {item.summary}
+      </p>
+      {item.keywords.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {item.keywords.slice(0, 6).map((keyword) => (
+            <span
+              key={keyword}
+              className="rounded-full bg-amber-50 px-2 py-0.5 text-[8px] text-amber-700"
+            >
+              {keyword}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemoryView() {
+  const {
+    agents,
+    currentWorkflowId,
+    selectedMemoryAgentId,
+    setSelectedMemoryAgent,
+    agentMemoryRecent,
+    agentMemorySearchResults,
+    fetchAgentRecentMemory,
+    searchAgentMemory,
+    isMemoryLoading,
+    memoryQuery,
+    setMemoryQuery,
+  } = useWorkflowStore();
+
+  const [localQuery, setLocalQuery] = useState(memoryQuery);
+
+  const sortedAgents = useMemo(
+    () =>
+      [...agents].sort((a, b) => {
+        if (a.role === b.role) return a.name.localeCompare(b.name);
+        const rank: Record<'ceo' | 'manager' | 'worker', number> = {
+          ceo: 0,
+          manager: 1,
+          worker: 2,
+        };
+        return rank[a.role] - rank[b.role];
+      }),
+    [agents]
+  );
+
+  const selectedAgent =
+    sortedAgents.find((agent) => agent.id === selectedMemoryAgentId) ||
+    sortedAgents.find((agent) => agent.role === 'ceo') ||
+    null;
+
+  useEffect(() => {
+    if (!selectedMemoryAgentId && selectedAgent) {
+      setSelectedMemoryAgent(selectedAgent.id);
+    }
+  }, [selectedMemoryAgentId, selectedAgent, setSelectedMemoryAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    void fetchAgentRecentMemory(selectedAgent.id, currentWorkflowId, 12);
+  }, [selectedAgent, currentWorkflowId, fetchAgentRecentMemory]);
+
+  useEffect(() => {
+    setLocalQuery(memoryQuery);
+  }, [memoryQuery]);
+
+  const handleSearch = async () => {
+    if (!selectedAgent || !localQuery.trim()) return;
+    setMemoryQuery(localQuery.trim());
+    await searchAgentMemory(selectedAgent.id, localQuery.trim(), 6);
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-[#F0E8E0] px-4 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-[#3A2A1A]">
+          <BookOpenText className="h-4 w-4 text-violet-500" />
+          Agent 记忆
+        </h3>
+        <p className="mt-0.5 text-[10px] text-[#8B7355]">
+          查看某个智能体的近期会话记忆，并搜索它的历史工作流经验。
+        </p>
+      </div>
+
+      <div className="border-b border-[#F0E8E0] px-4 py-3">
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {sortedAgents.map((agent) => (
+            <button
+              key={agent.id}
+              onClick={() => setSelectedMemoryAgent(agent.id)}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition-all ${
+                selectedAgent?.id === agent.id
+                  ? 'bg-[#D4845A] text-white shadow-sm'
+                  : 'bg-[#F8F4F0] text-[#6B5A4A] hover:bg-[#F0E8E0]'
+              }`}
+            >
+              {agent.name}
+            </button>
+          ))}
+        </div>
+
+        {selectedAgent && (
+          <div className="rounded-xl bg-[#F8F4F0] px-3 py-2 text-[10px] text-[#6B5A4A]">
+            <span className="font-semibold text-[#3A2A1A]">{selectedAgent.name}</span>
+            <span className="mx-1">·</span>
+            <span>{DEPARTMENT_NAMES[selectedAgent.department] || selectedAgent.department}</span>
+            <span className="mx-1">·</span>
+            <span>{selectedAgent.role}</span>
+            {currentWorkflowId && (
+              <>
+                <span className="mx-1">·</span>
+                <span>已附带当前工作流上下文</span>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="mt-2 flex gap-2">
+          <input
+            value={localQuery}
+            onChange={(event) => setLocalQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void handleSearch();
+              }
+            }}
+            placeholder="搜索这个 Agent 的历史经验..."
+            className="flex-1 rounded-xl border border-[#F0E8E0] bg-white px-3 py-2 text-xs text-[#3A2A1A] placeholder-[#B8A896] focus:border-[#D4845A]/50 focus:outline-none focus:ring-2 focus:ring-[#D4845A]/20"
+          />
+          <button
+            onClick={() => void handleSearch()}
+            disabled={!selectedAgent || !localQuery.trim() || isMemoryLoading}
+            className="flex items-center gap-1 rounded-xl bg-[#F0E8E0] px-3 py-2 text-xs font-medium text-[#5B4837] transition-colors hover:bg-[#E8DDD0] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isMemoryLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="h-3.5 w-3.5" />
+            )}
+            搜索
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <h4 className="text-[10px] font-bold text-[#8B7355]">近期记忆</h4>
+            {isMemoryLoading && (
+              <span className="flex items-center gap-1 text-[9px] text-[#B0A090]">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                加载中
+              </span>
+            )}
+          </div>
+
+          {agentMemoryRecent.length === 0 ? (
+            <div className="rounded-xl bg-[#F8F4F0] px-3 py-4 text-center text-[10px] text-[#8B7355]">
+              {selectedAgent ? '这个 Agent 还没有近期记忆记录。' : '先选择一个 Agent。'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {agentMemoryRecent.slice().reverse().map((entry, index) => (
+                <div
+                  key={`${entry.timestamp}-${index}`}
+                  className="rounded-xl border border-[#E8DDD0] bg-white/80 p-3"
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-[#F0E8E0] px-2 py-0.5 text-[8px] text-[#6B5A4A]">
+                        {getMemoryTypeLabel(entry.type)}
+                      </span>
+                      {entry.direction && (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[8px] text-blue-700">
+                          {getMemoryDirectionLabel(entry.direction)}
+                        </span>
+                      )}
+                      {entry.stage && <span className="text-[8px] text-[#B0A090]">{entry.stage}</span>}
+                    </div>
+                    <span className="text-[8px] text-[#B0A090]">{formatTime(entry.timestamp)}</span>
+                  </div>
+                  {entry.otherAgentId && (
+                    <p className="mb-1 text-[8px] text-[#A2896F]">关联对象：{entry.otherAgentId}</p>
+                  )}
+                  <p className="line-clamp-4 whitespace-pre-wrap text-[9px] leading-5 text-[#5D4C3B]">
+                    {entry.preview || entry.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h4 className="mb-1.5 text-[10px] font-bold text-[#8B7355]">历史经验搜索</h4>
+          {agentMemorySearchResults.length === 0 ? (
+            <div className="rounded-xl bg-[#F8F4F0] px-3 py-4 text-center text-[10px] text-[#8B7355]">
+              输入关键词后，可以查看这个 Agent 过去完成过的相关工作流摘要。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {agentMemorySearchResults.map((item) => (
+                <MemoryResultCard key={`${item.workflowId}-${item.createdAt}`} item={item} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -631,7 +870,7 @@ function HistoryView() {
   const { workflows, setCurrentWorkflow, setActiveView, fetchWorkflows } = useWorkflowStore();
 
   useEffect(() => {
-    fetchWorkflows();
+    void fetchWorkflows();
   }, [fetchWorkflows]);
 
   return (
@@ -660,26 +899,14 @@ function HistoryView() {
             >
               <div className="mb-1 flex items-center justify-between">
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${
-                    workflow.status === 'running'
-                      ? 'bg-blue-100 text-blue-700'
-                      : workflow.status === 'completed'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : workflow.status === 'failed'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-gray-100 text-gray-600'
-                  }`}
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${getWorkflowStatusClass(
+                    workflow.status
+                  )}`}
                 >
-                  {workflow.status === 'running'
-                    ? '运行中'
-                    : workflow.status === 'completed'
-                      ? '已完成'
-                      : workflow.status === 'failed'
-                        ? '失败'
-                        : '等待中'}
+                  {WORKFLOW_STATUS_LABELS[workflow.status] || workflow.status}
                 </span>
                 <span className="text-[9px] text-[#B0A090]">
-                  {new Date(workflow.created_at).toLocaleString('zh-CN')}
+                  {formatTime(workflow.created_at)}
                 </span>
               </div>
               <p className="line-clamp-2 text-xs text-[#3A2A1A]">{workflow.directive}</p>
@@ -709,9 +936,9 @@ export function WorkflowPanel() {
 
   useEffect(() => {
     initSocket();
-    fetchAgents();
-    fetchStages();
-    fetchWorkflows();
+    void fetchAgents();
+    void fetchStages();
+    void fetchWorkflows();
   }, [initSocket, fetchAgents, fetchStages, fetchWorkflows]);
 
   if (!isWorkflowPanelOpen) return null;
@@ -721,6 +948,7 @@ export function WorkflowPanel() {
     { id: 'org', icon: Network, label: '组织' },
     { id: 'workflow', icon: BarChart3, label: '进度' },
     { id: 'review', icon: Star, label: '评审' },
+    { id: 'memory', icon: BookOpenText, label: '记忆' },
     { id: 'history', icon: History, label: '历史' },
   ];
 
@@ -737,7 +965,11 @@ export function WorkflowPanel() {
           <div>
             <h3 className="text-sm font-bold text-[#3A2A1A]">多智能体编排</h3>
             <div className="flex items-center gap-1.5">
-              <div className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-400'}`} />
+              <div
+                className={`h-1.5 w-1.5 rounded-full ${
+                  connected ? 'bg-emerald-500' : 'bg-red-400'
+                }`}
+              />
               <span className="text-[9px] text-[#8B7355]">{connected ? '已连接' : '未连接'}</span>
             </div>
           </div>
@@ -773,6 +1005,7 @@ export function WorkflowPanel() {
         {activeView === 'org' && <OrgTreeView />}
         {activeView === 'workflow' && <WorkflowProgressView />}
         {activeView === 'review' && <ReviewView />}
+        {activeView === 'memory' && <MemoryView />}
         {activeView === 'history' && <HistoryView />}
       </div>
     </div>

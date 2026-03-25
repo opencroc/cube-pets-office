@@ -3,6 +3,7 @@
  * Enforces: CEO↔Manager, Manager↔Worker (same department), blocks skip-level
  */
 import db, { type AgentRow, type MessageRow } from '../db/index.js';
+import { sessionStore } from '../memory/session-store.js';
 import { getSocketIO } from './socket.js';
 
 class MessageBus {
@@ -36,6 +37,22 @@ class MessageBus {
       stage,
       content,
       metadata: metadata || null,
+    });
+    sessionStore.appendMessageLog(fromId, {
+      workflowId,
+      stage,
+      direction: 'outbound',
+      otherAgentId: toId,
+      content,
+      metadata,
+    });
+    sessionStore.appendMessageLog(toId, {
+      workflowId,
+      stage,
+      direction: 'inbound',
+      otherAgentId: fromId,
+      content,
+      metadata,
     });
 
     // Emit via WebSocket

@@ -1,0 +1,299 @@
+[
+  {
+    "workflowId": "6dc13042-0e90-4b0f-99be-0555d23965a0",
+    "createdAt": "2026-03-25T16:56:39.831Z",
+    "directive": "分析竞品最新动态，并制定我们的应对策略。",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "并制定我们的应对",
+      "策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "f585edbf-6149-462e-b420-557258598475",
+    "createdAt": "2026-03-25T16:56:39.835Z",
+    "directive": "分析竞品最新动态，并制定我们的应对策略",
+    "status": "completed",
+    "role": "ceo",
+    "stage": "evolution",
+    "summary": "角色：ceo\n工作流状态：completed\n消息数：9\n相关任务数：0\n近期消息：ceo -> pixel [feedback] {\n  \"analysis\": \"本次竞品应对专项整体执行质量极高，三个部门均跳出了'竞品做什么我们就做什么'的跟随陷阱，独立找到了符合自身业务特性的错位竞争切；ceo -> nexus [feedback] {\n  \"analysis\": \"本次竞品应对专项整体执行质量极高，三个部门均跳出了'竞品做什么我们就做什么'的跟随陷阱，独立找到了符合自身业务特性的错位竞争切；ceo -> echo [feedback] {\n  \"analysis\": \"本次竞品应对专项整体执行质量极高，三个部门均跳出了'竞品做什么我们就做什么'的跟随陷阱，独立找到了符合自身业务特性的错位竞争切",
+    "keywords": [
+      "ai",
+      "p0",
+      "id",
+      "managerid",
+      "direction",
+      "ta",
+      "a100",
+      "ceo",
+      "analysis",
+      "本次竞品应对专项",
+      "整体执行质量极高",
+      "三个部门均跳出了"
+    ]
+  },
+  {
+    "workflowId": "e728272b-c3a7-4072-ad3b-f9814519b44a",
+    "createdAt": "2026-03-25T16:56:39.865Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "completed",
+    "role": "ceo",
+    "stage": "evolution",
+    "summary": "角色：ceo\n工作流状态：completed\n消息数：9\n相关任务数：0\n近期消息：ceo -> pixel [feedback] {\n  \"analysis\": \"本次竞品应对专项中，三个部门均高效完成了各自领域的拆解与防御方案制定，整体呈现出'精准定位漏损、克制不盲目跟风、低成本快速响应；ceo -> nexus [feedback] {\n  \"analysis\": \"本次竞品应对专项中，三个部门均高效完成了各自领域的拆解与防御方案制定，整体呈现出'精准定位漏损、克制不盲目跟风、低成本快速响应；ceo -> echo [feedback] {\n  \"analysis\": \"本次竞品应对专项中，三个部门均高效完成了各自领域的拆解与防御方案制定，整体呈现出'精准定位漏损、克制不盲目跟风、低成本快速响应",
+    "keywords": [
+      "ai",
+      "pixel",
+      "volt",
+      "w1",
+      "ceo",
+      "nova",
+      "id",
+      "managerid",
+      "direction",
+      "本次复盘整体评定",
+      "下一步要求",
+      "深渊共鸣"
+    ]
+  },
+  {
+    "workflowId": "4f2684be-1beb-4f54-b8d3-3b16032c1a96",
+    "createdAt": "2026-03-25T16:56:39.889Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "planning",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：3\n相关任务数：0\n近期消息：ceo -> pixel [direction] 从游戏策划与体验维度，拆解竞品最新版本的核心玩法改动、商业化策略及留存手段。对比我们当前产品的优劣势，输出针对性的功能迭代方向、体验优化方案及数据增长应对策略。；ceo -> nexus [direction] 从技术与算法维度，调研竞品最新动态中涉及的AI能力（如智能NPC、内容生成、推荐算法等）。评估其技术实现路径与效果，明确我们需要跟进或防御的AI技术储备方向及应；ceo -> echo [direction] 从内容与社区维度，监控并分析竞品近期的营销动作、社区舆论风向及用户核心诉求变化。提炼其用户沟通与运营手段的亮点，制定我们在内容宣发、社区引导和舆情防御上的应对策",
+    "keywords": [
+      "ceo",
+      "ai",
+      "direction",
+      "从游戏策划与体验",
+      "维度",
+      "拆解竞品最新版本",
+      "的核心玩法改动",
+      "商业化策略及留存",
+      "手段",
+      "对比我们当前产品",
+      "的优劣势",
+      "输出针对性的功能"
+    ]
+  },
+  {
+    "workflowId": "121ce9c1-20b0-4335-b0cf-f074c7b3bd9d",
+    "createdAt": "2026-03-25T16:56:39.901Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "2dcd2ad7-0dfa-4356-a3b0-c2ce46dcfe19",
+    "createdAt": "2026-03-25T16:56:39.903Z",
+    "directive": "????????,??????",
+    "status": "completed",
+    "role": "ceo",
+    "stage": "evolution",
+    "summary": "角色：ceo\n工作流状态：completed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "角色",
+      "ceo",
+      "工作流状态",
+      "completed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "42183390-2345-4a8d-9bb4-a5f39475495b",
+    "createdAt": "2026-03-25T16:56:39.905Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "12852740-27e7-406c-bf29-79d9aa28840a",
+    "createdAt": "2026-03-25T16:56:39.906Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "942686bd-6fbe-4317-b84f-dec3f8c20225",
+    "createdAt": "2026-03-25T16:56:39.908Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "053192da-bb92-406a-8ba8-6ff2a492f493",
+    "createdAt": "2026-03-25T16:56:39.910Z",
+    "directive": "????????,??????",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "3fe9efc7-6f0d-404f-840b-aa5c90c89205",
+    "createdAt": "2026-03-25T16:56:39.912Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "15afca71-3616-4000-a650-59d03cfba4ed",
+    "createdAt": "2026-03-25T16:56:39.913Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "5c27a0f1-752e-4b98-aac3-d2837914ccc3",
+    "createdAt": "2026-03-25T16:56:39.915Z",
+    "directive": "???? LLM ????",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "llm",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "694e3a10-022a-4282-8ebf-1034dd74faf8",
+    "createdAt": "2026-03-25T16:56:39.916Z",
+    "directive": "分析竞品最新动态，制定应对策略",
+    "status": "failed",
+    "role": "ceo",
+    "stage": "direction",
+    "summary": "角色：ceo\n工作流状态：failed\n消息数：0\n相关任务数：0",
+    "keywords": [
+      "分析竞品最新动态",
+      "制定应对策略",
+      "角色",
+      "ceo",
+      "工作流状态",
+      "failed",
+      "消息数",
+      "相关任务数"
+    ]
+  },
+  {
+    "workflowId": "64942722-8f46-43d2-9cf9-d4c684c1d7f0",
+    "createdAt": "2026-03-25T17:04:29.531Z",
+    "directive": "分析竞品最新动态，并制定我们的应对策略。",
+    "status": "completed",
+    "role": "ceo",
+    "stage": "evolution",
+    "summary": "角色：ceo\n工作流状态：completed\n消息数：9\n相关任务数：0\n近期消息：ceo -> pixel [feedback] {\n  \"analysis\": \"本次竞品应对专项呈现'两高一断'的态势：游戏部与AI部均高质量完成了拆解与防御方案设计，且都成功跳出了跟随陷阱，找到了符合自身；ceo -> nexus [feedback] {\n  \"analysis\": \"本次竞品应对专项呈现'两高一断'的态势：游戏部与AI部均高质量完成了拆解与防御方案设计，且都成功跳出了跟随陷阱，找到了符合自身；ceo -> echo [feedback] {\n  \"analysis\": \"本次竞品应对专项呈现'两高一断'的态势：游戏部与AI部均高质量完成了拆解与防御方案设计，且都成功跳出了跟随陷阱，找到了符合自身",
+    "keywords": [
+      "ai",
+      "npc",
+      "nova",
+      "lyra",
+      "id",
+      "managerid",
+      "direction",
+      "下一步",
+      "volt",
+      "20",
+      "pixel",
+      "本次竞品应对专项"
+    ]
+  }
+]

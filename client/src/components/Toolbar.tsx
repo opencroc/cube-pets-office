@@ -1,163 +1,313 @@
-/**
- * Toolbar — Floating action buttons for the 3D scene
- * Design: Warm glass-morphism buttons, fixed z-index above canvas
- */
+import { useMemo, useState } from 'react';
+import {
+  BookOpen,
+  Brain,
+  HelpCircle,
+  MessageCircle,
+  Settings,
+  Sparkles,
+  Target,
+  Workflow,
+  X,
+} from 'lucide-react';
+
+import { getAgentToolbarLabel } from '@/lib/agent-config';
 import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
-import { BookOpen, Settings, MessageCircle, HelpCircle, X, Brain } from 'lucide-react';
-import { useState } from 'react';
 
-const PET_LABELS: Record<string, string> = {
-  cat: '🐱 猫咪主管',
-  dog: '🐶 狗狗研究员',
-  bunny: '🐰 兔兔管理员',
-  monkey: '🐵 猴子讨论家',
-  chick: '🐥 小鸡记录员',
+type DockButton = {
+  id: 'paper' | 'config' | 'workflow' | 'chat' | 'help';
+  label: string;
+  icon: typeof BookOpen;
+  active: boolean;
+  accent: string;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
+function StatusChip({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/60 bg-white/76 px-3 py-2 shadow-[0_10px_24px_rgba(70,52,32,0.08)] backdrop-blur-xl">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#9B856F]">{label}</p>
+      <p className="mt-1 text-xs font-semibold" style={{ color: accent }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 export function Toolbar() {
-  const { togglePdf, toggleConfig, toggleChat, isPdfOpen, isConfigOpen, isChatOpen, selectedPet } = useAppStore();
-  const { isWorkflowPanelOpen, toggleWorkflowPanel } = useWorkflowStore();
+  const {
+    togglePdf,
+    toggleConfig,
+    toggleChat,
+    isPdfOpen,
+    isConfigOpen,
+    isChatOpen,
+    selectedPet,
+  } = useAppStore();
+  const {
+    isWorkflowPanelOpen,
+    toggleWorkflowPanel,
+    connected,
+    currentWorkflow,
+    agents,
+    agentStatuses,
+  } = useWorkflowStore();
+
   const [showInfo, setShowInfo] = useState(false);
 
-  const btnBase = `
-    relative flex items-center gap-2.5 px-4 py-2.5 rounded-2xl
-    backdrop-blur-xl border transition-all duration-300 shadow-lg
-    hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md
-  `;
+  const activeAgentCount = useMemo(
+    () => Object.values(agentStatuses).filter((status) => status && status !== 'idle').length,
+    [agentStatuses]
+  );
 
-  const btnActive = 'text-white border-transparent shadow-xl';
-  const btnInactive = 'bg-white/80 text-[#5A4A3A] border-white/50 hover:bg-white/95';
+  const workflowSummary = currentWorkflow?.current_stage
+    ? `${currentWorkflow.current_stage}`
+    : currentWorkflow?.status === 'completed'
+      ? 'completed'
+      : 'idle';
+
+  const dockButtons: DockButton[] = [
+    {
+      id: 'paper',
+      label: '论文',
+      icon: BookOpen,
+      active: isPdfOpen,
+      accent: '#C48A55',
+      onClick: (event) => {
+        event.stopPropagation();
+        togglePdf();
+      },
+    },
+    {
+      id: 'config',
+      label: '配置',
+      icon: Settings,
+      active: isConfigOpen,
+      accent: '#2F6A54',
+      onClick: (event) => {
+        event.stopPropagation();
+        toggleConfig();
+      },
+    },
+    {
+      id: 'workflow',
+      label: '编排',
+      icon: Brain,
+      active: isWorkflowPanelOpen,
+      accent: '#D07A4F',
+      onClick: (event) => {
+        event.stopPropagation();
+        toggleWorkflowPanel();
+      },
+    },
+    {
+      id: 'chat',
+      label: '聊天',
+      icon: MessageCircle,
+      active: isChatOpen,
+      accent: '#A86B4E',
+      onClick: (event) => {
+        event.stopPropagation();
+        toggleChat();
+      },
+    },
+    {
+      id: 'help',
+      label: '帮助',
+      icon: HelpCircle,
+      active: showInfo,
+      accent: '#75604D',
+      onClick: (event) => {
+        event.stopPropagation();
+        setShowInfo((prev) => !prev);
+      },
+    },
+  ];
 
   return (
     <>
-      {/* Top title bar */}
       <div
-        className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center py-3"
+        className="fixed left-1/2 top-4 z-[60] -translate-x-1/2"
         style={{ pointerEvents: 'none' }}
       >
         <div
-          className="bg-white/75 backdrop-blur-xl rounded-2xl px-6 py-2 border border-white/60 shadow-lg"
+          className="min-w-[250px] rounded-[26px] border border-white/65 bg-white/78 px-5 py-3 shadow-[0_14px_36px_rgba(88,66,44,0.12)] backdrop-blur-2xl"
           style={{ pointerEvents: 'auto' }}
         >
+          <div className="flex items-center justify-center gap-2 text-[#7F674F]">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span className="text-[9px] font-semibold uppercase tracking-[0.28em]">Live Workspace</span>
+          </div>
           <h1
-            className="text-lg font-bold text-[#3A2A1A] tracking-wide"
+            className="mt-1 text-center text-[28px] font-bold leading-none text-[#3A2A1A]"
             style={{ fontFamily: "'Playfair Display', serif" }}
           >
             Cube Pets Office
           </h1>
-          <p className="text-[10px] text-[#8B7355] text-center tracking-[0.2em] uppercase">
-            立方宠物研究室
+          <p className="mt-1 text-center text-[10px] uppercase tracking-[0.28em] text-[#A08972]">
+            Multi-Agent 3D Command Floor
           </p>
         </div>
       </div>
 
-      {/* Action buttons — left side, vertically stacked */}
       <div
-        className="fixed bottom-6 left-5 z-[60] flex flex-col gap-2.5"
+        className="fixed left-5 top-5 z-[60] hidden max-w-[340px] gap-2 xl:grid"
         style={{ pointerEvents: 'auto' }}
       >
-        {/* PDF Viewer */}
-        <button
-          onClick={(e) => { e.stopPropagation(); togglePdf(); }}
-          className={`${btnBase} ${isPdfOpen ? `${btnActive} bg-gradient-to-r from-[#C4956A] to-[#D4A57A]` : btnInactive}`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span className="text-sm font-semibold">论文</span>
-        </button>
-
-        {/* Config */}
-        <button
-          onClick={(e) => { e.stopPropagation(); toggleConfig(); }}
-          className={`${btnBase} ${isConfigOpen ? `${btnActive} bg-gradient-to-r from-[#2D5F4A] to-[#3D7F5A]` : btnInactive}`}
-        >
-          <Settings className="w-4 h-4" />
-          <span className="text-sm font-semibold">配置</span>
-        </button>
-
-        {/* Workflow Panel */}
-        <button
-          onClick={(e) => { e.stopPropagation(); toggleWorkflowPanel(); }}
-          className={`${btnBase} ${isWorkflowPanelOpen ? `${btnActive} bg-gradient-to-r from-[#D4845A] to-[#E4946A]` : btnInactive}`}
-        >
-          <Brain className="w-4 h-4" />
-          <span className="text-sm font-semibold">编排</span>
-        </button>
-
-        {/* Chat */}
-        <button
-          onClick={(e) => { e.stopPropagation(); toggleChat(); }}
-          className={`${btnBase} ${isChatOpen ? `${btnActive} bg-gradient-to-r from-[#C4956A] to-[#D4A57A]` : btnInactive}`}
-        >
-          <MessageCircle className="w-4 h-4" />
-          <span className="text-sm font-semibold">聊天</span>
-        </button>
-
-        {/* Info */}
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowInfo(!showInfo); }}
-          className={`${btnBase} ${showInfo ? `${btnActive} bg-gradient-to-r from-[#6B5B4A] to-[#8B7B6A]` : btnInactive}`}
-        >
-          <HelpCircle className="w-4 h-4" />
-          <span className="text-sm font-semibold">帮助</span>
-        </button>
-      </div>
-
-      {/* Info panel */}
-      {showInfo && (
-        <div
-          className="fixed bottom-6 left-32 z-[60] bg-white/90 backdrop-blur-xl rounded-2xl p-5 border border-white/60 shadow-2xl max-w-[300px]
-            animate-in fade-in slide-in-from-left-4 duration-300"
-          style={{ pointerEvents: 'auto' }}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h4
-              className="text-sm font-bold text-[#3A2A1A]"
-              style={{ fontFamily: "'Playfair Display', serif" }}
-            >
-              使用指南
-            </h4>
-            <button
-              onClick={() => setShowInfo(false)}
-              className="p-1 rounded-lg hover:bg-[#F0E8E0] transition-colors"
-            >
-              <X className="w-3.5 h-3.5 text-[#8B7355]" />
-            </button>
+        <div className="rounded-[28px] border border-white/60 bg-[linear-gradient(135deg,rgba(255,250,245,0.86),rgba(248,240,231,0.72))] px-4 py-3 shadow-[0_12px_36px_rgba(70,52,32,0.12)] backdrop-blur-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#A08972]">
+                Workspace Status
+              </p>
+              <p className="mt-1 text-sm font-semibold text-[#3A2A1A]">
+                {currentWorkflow?.directive?.slice(0, 28) || '等待新指令'}
+                {currentWorkflow?.directive && currentWorkflow.directive.length > 28 ? '...' : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 rounded-full bg-white/70 px-2.5 py-1">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-400'}`}
+              />
+              <span className="text-[10px] font-semibold text-[#6A5642]">
+                {connected ? 'online' : 'offline'}
+              </span>
+            </div>
           </div>
-          <div className="space-y-2.5 text-xs text-[#5A4A3A] leading-relaxed">
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#F0E8E0] flex items-center justify-center text-[10px] shrink-0 mt-0.5">🖱️</span>
-              <span>拖拽旋转3D场景，滚轮缩放视角</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#F0E8E0] flex items-center justify-center text-[10px] shrink-0 mt-0.5">🐾</span>
-              <span>点击宠物查看它们在做什么，并开始AI对话</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#F0E8E0] flex items-center justify-center text-[10px] shrink-0 mt-0.5">📄</span>
-              <span>打开论文面板浏览完整的33页PDF论文</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#F0E8E0] flex items-center justify-center text-[10px] shrink-0 mt-0.5">⚙️</span>
-              <span>在配置面板中设置Codex API参数</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#F0E8E0] flex items-center justify-center text-[10px] shrink-0 mt-0.5">💬</span>
-              <span>在聊天中向宠物提问关于论文的问题</span>
-            </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <StatusChip label="Agents" value={`${activeAgentCount}/${agents.length || 18}`} accent="#2F6A54" />
+            <StatusChip label="Stage" value={workflowSummary} accent="#C06F46" />
+            <StatusChip
+              label="Focus"
+              value={selectedPet ? getAgentToolbarLabel(selectedPet).slice(0, 16) : 'CEO Gateway'}
+              accent="#7A5BC3"
+            />
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Selected pet indicator — top right */}
+      <div
+        className="fixed bottom-6 left-5 z-[60] flex items-end gap-3"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div className="rounded-[30px] border border-white/60 bg-white/74 p-2 shadow-[0_14px_40px_rgba(60,44,28,0.14)] backdrop-blur-2xl">
+          <div className="mb-1 px-2.5 pt-1">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[#AA927C]">
+              Dock
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            {dockButtons.map((button) => {
+              const Icon = button.icon;
+
+              return (
+                <button
+                  key={button.id}
+                  onClick={button.onClick}
+                  className={`group flex min-w-[120px] items-center gap-3 rounded-[22px] px-3.5 py-3 text-left transition-all duration-300 ${
+                    button.active
+                      ? 'translate-x-1 shadow-[0_12px_24px_rgba(80,56,36,0.14)]'
+                      : 'hover:translate-x-1 hover:bg-white/70'
+                  }`}
+                  style={{
+                    background: button.active
+                      ? `linear-gradient(135deg, ${button.accent}, ${button.accent}CC)`
+                      : 'rgba(255,255,255,0.28)',
+                    color: button.active ? '#FFFFFF' : '#5A4A3A',
+                  }}
+                >
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-2xl shadow-sm"
+                    style={{
+                      background: button.active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.74)',
+                    }}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">{button.label}</div>
+                    <div
+                      className="text-[10px] uppercase tracking-[0.16em]"
+                      style={{ color: button.active ? 'rgba(255,255,255,0.78)' : '#A08972' }}
+                    >
+                      {button.id === 'paper' && 'paper'}
+                      {button.id === 'config' && 'model'}
+                      {button.id === 'workflow' && 'ops'}
+                      {button.id === 'chat' && 'agent'}
+                      {button.id === 'help' && 'tips'}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {showInfo && (
+          <div className="mb-2 w-[320px] rounded-[28px] border border-white/60 bg-white/88 p-5 shadow-[0_16px_44px_rgba(60,44,28,0.18)] backdrop-blur-2xl animate-in fade-in slide-in-from-left-4 duration-300">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#A08972]">
+                  Quick Guide
+                </p>
+                <h4
+                  className="mt-1 text-sm font-bold text-[#3A2A1A]"
+                  style={{ fontFamily: "'Playfair Display', serif" }}
+                >
+                  如何使用这间办公室
+                </h4>
+              </div>
+              <button
+                onClick={() => setShowInfo(false)}
+                className="rounded-xl p-2 transition-colors hover:bg-[#F0E8E0]"
+              >
+                <X className="h-3.5 w-3.5 text-[#8B7355]" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed text-[#5A4A3A]">
+              <div className="flex items-start gap-3">
+                <Target className="mt-0.5 h-4 w-4 shrink-0 text-[#D07A4F]" />
+                <span>点击任意 Agent 会高亮它，并把聊天焦点切到该角色。</span>
+              </div>
+              <div className="flex items-start gap-3">
+                <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-[#7A5BC3]" />
+                <span>“编排”面板里可以看组织树、工作流进度、评审结果和记忆。</span>
+              </div>
+              <div className="flex items-start gap-3">
+                <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-[#C48A55]" />
+                <span>“论文”会打开完整参考材料，适合边看边问边验证系统设计。</span>
+              </div>
+              <div className="flex items-start gap-3">
+                <Settings className="mt-0.5 h-4 w-4 shrink-0 text-[#2F6A54]" />
+                <span>如果模型调用异常，先检查 `API Key`、`Base URL` 和模型名称是否可用。</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {selectedPet && (
         <div
-          className="fixed top-16 right-5 z-[60] bg-white/85 backdrop-blur-xl rounded-xl px-3.5 py-2 border border-white/60 shadow-lg
-            animate-in fade-in slide-in-from-right-2 duration-300"
+          className="fixed right-5 top-24 z-[60] max-w-[280px] rounded-[24px] border border-white/60 bg-white/82 px-4 py-3 shadow-[0_12px_30px_rgba(60,44,28,0.14)] backdrop-blur-2xl animate-in fade-in slide-in-from-right-2 duration-300"
           style={{ pointerEvents: 'auto' }}
         >
-          <p className="text-xs text-[#5A4A3A]">
-            当前选中: <span className="text-[#D4845A] font-bold">{PET_LABELS[selectedPet]}</span>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#A08972]">
+            Current Focus
+          </p>
+          <p className="mt-1 text-sm font-semibold text-[#3A2A1A]">
+            {getAgentToolbarLabel(selectedPet)}
           </p>
         </div>
       )}

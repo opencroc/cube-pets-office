@@ -1,11 +1,12 @@
 /**
  * Main 3D Scene Component
- * Design: Scandinavian Warm Minimalism — Cozy Study Room
+ * Design: Scandinavian Warm Minimalism - Cozy Study Room
  * Warm natural lighting, honey-brown wood tones, cream walls
  */
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
+import { ContactShadows } from '@react-three/drei';
 import { Suspense } from 'react';
+import { ACESFilmicToneMapping } from 'three';
 import { OfficeRoom } from './three/OfficeRoom';
 import { PetWorkers } from './three/PetWorkers';
 
@@ -14,79 +15,65 @@ export function Scene3D() {
     <div className="w-full h-full absolute inset-0 z-0">
       <Canvas
         shadows
-        camera={{ position: [6, 5, 6], fov: 45, near: 0.1, far: 100 }}
+        camera={{ position: [8.5, 6.2, 8.5], fov: 42, near: 0.1, far: 100 }}
         gl={{ antialias: true, alpha: false }}
         onCreated={({ gl }) => {
-          gl.setClearColor('#E8E0D4');
-          gl.toneMapping = 1; // ACESFilmicToneMapping
-          gl.toneMappingExposure = 1.1;
+          gl.setClearColor('#D9D0C3');
+          gl.toneMapping = ACESFilmicToneMapping;
+          gl.toneMappingExposure = 0.82;
         }}
       >
         <Suspense fallback={null}>
-          {/* Warm ambient lighting */}
-          <ambientLight intensity={0.5} color="#FFF5E6" />
+          <ambientLight intensity={0.38} color="#F7EDE1" />
 
-          {/* Main directional light — warm sunlight from window */}
+          <hemisphereLight color="#FAEEDD" groundColor="#B28A67" intensity={0.34} />
+
           <directionalLight
-            position={[5, 8, 3]}
-            intensity={1.2}
-            color="#FFF0D4"
+            position={[-5.2, 7.2, 4.4]}
+            intensity={0.98}
+            color="#FBE2BC"
             castShadow
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
-            shadow-camera-far={20}
-            shadow-camera-left={-8}
-            shadow-camera-right={8}
-            shadow-camera-top={8}
-            shadow-camera-bottom={-8}
+            shadow-camera-far={22}
+            shadow-camera-left={-11}
+            shadow-camera-right={11}
+            shadow-camera-top={11}
+            shadow-camera-bottom={-11}
+            shadow-bias={-0.00025}
           />
 
-          {/* Fill light from opposite side — cool blue */}
-          <directionalLight
-            position={[-3, 4, -2]}
-            intensity={0.3}
-            color="#D4E8FF"
-          />
+          <directionalLight position={[6.4, 4.5, 5.5]} intensity={0.24} color="#F1E4D4" />
 
-          {/* Point light for desk lamp effect */}
-          <pointLight
-            position={[-1.5, 2.2, 0.5]}
-            intensity={0.8}
-            color="#FFE4B5"
-            distance={5}
+          <spotLight
+            position={[-7.2, 2.9, 0.3]}
+            angle={0.92}
+            penumbra={1}
+            intensity={0.34}
+            color="#FFF0D8"
+            distance={18}
             decay={2}
           />
 
-          {/* Office Room with furniture */}
-          <OfficeRoom />
+          <pointLight
+            position={[0.3, 2.35, -1.1]}
+            intensity={0.28}
+            color="#F6D8A9"
+            distance={6.6}
+            decay={2}
+          />
 
-          {/* Cube Pet Workers */}
+          <OfficeRoom />
           <PetWorkers />
 
-          {/* Ground shadows */}
           <ContactShadows
             position={[0, 0.01, 0]}
-            opacity={0.4}
-            scale={12}
-            blur={2}
-            far={4}
-            color="#8B7355"
+            opacity={0.34}
+            scale={15}
+            blur={2.2}
+            far={5.5}
+            color="#665140"
           />
-
-          {/* Camera controls */}
-          <OrbitControls
-            makeDefault
-            minPolarAngle={Math.PI / 6}
-            maxPolarAngle={Math.PI / 2.5}
-            minDistance={4}
-            maxDistance={14}
-            target={[0, 1, 0]}
-            enableDamping
-            dampingFactor={0.05}
-          />
-
-          {/* Environment for reflections */}
-          <Environment preset="apartment" />
         </Suspense>
       </Canvas>
     </div>

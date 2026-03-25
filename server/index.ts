@@ -32,6 +32,7 @@ async function startServer() {
   // Initialize agent registry
   const { registry } = await import("./core/registry.js");
   registry.init();
+  const { sessionStore } = await import("./memory/session-store.js");
 
   // Recover workflows that were left running across restarts.
   const db = (await import("./db/index.js")).default;
@@ -45,6 +46,8 @@ async function startServer() {
           failed_stage: workflow.current_stage || null,
         },
       });
+    } else if (workflow.status === "completed" || workflow.status === "failed") {
+      sessionStore.materializeWorkflowMemories(workflow.id);
     }
   }
 
