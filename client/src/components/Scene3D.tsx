@@ -15,12 +15,13 @@ export function Scene3D() {
     <div className="w-full h-full absolute inset-0 z-0">
       <Canvas
         shadows
-        camera={{ position: [8.5, 6.2, 8.5], fov: 42, near: 0.1, far: 100 }}
+        camera={{ position: [0, 7.3, 13.8], fov: 40, near: 0.1, far: 100 }}
         gl={{ antialias: true, alpha: false }}
-        onCreated={({ gl }) => {
+        onCreated={({ gl, camera }) => {
           gl.setClearColor('#D9D0C3');
           gl.toneMapping = ACESFilmicToneMapping;
           gl.toneMappingExposure = 0.82;
+          camera.lookAt(0, 1.35, 0);
         }}
       >
         <Suspense fallback={null}>

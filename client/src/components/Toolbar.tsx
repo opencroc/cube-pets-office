@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  BookOpen,
   Brain,
   HelpCircle,
   MessageCircle,
@@ -15,9 +14,10 @@ import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
 
 type DockButton = {
-  id: 'paper' | 'config' | 'workflow' | 'chat' | 'help';
+  id: 'config' | 'workflow' | 'chat' | 'help';
   label: string;
-  icon: typeof BookOpen;
+  sublabel: string;
+  icon: typeof Settings;
   active: boolean;
   accent: string;
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
@@ -25,10 +25,8 @@ type DockButton = {
 
 export function Toolbar() {
   const {
-    togglePdf,
     toggleConfig,
     toggleChat,
-    isPdfOpen,
     isConfigOpen,
     isChatOpen,
     selectedPet,
@@ -39,19 +37,9 @@ export function Toolbar() {
 
   const dockButtons: DockButton[] = [
     {
-      id: 'paper',
-      label: '论文',
-      icon: BookOpen,
-      active: isPdfOpen,
-      accent: '#C48A55',
-      onClick: (event) => {
-        event.stopPropagation();
-        togglePdf();
-      },
-    },
-    {
       id: 'config',
       label: '配置',
+      sublabel: 'MODEL',
       icon: Settings,
       active: isConfigOpen,
       accent: '#2F6A54',
@@ -63,6 +51,7 @@ export function Toolbar() {
     {
       id: 'workflow',
       label: '编排',
+      sublabel: 'OPS',
       icon: Brain,
       active: isWorkflowPanelOpen,
       accent: '#D07A4F',
@@ -74,6 +63,7 @@ export function Toolbar() {
     {
       id: 'chat',
       label: '聊天',
+      sublabel: 'AGENT',
       icon: MessageCircle,
       active: isChatOpen,
       accent: '#A86B4E',
@@ -85,6 +75,7 @@ export function Toolbar() {
     {
       id: 'help',
       label: '帮助',
+      sublabel: 'TIPS',
       icon: HelpCircle,
       active: showInfo,
       accent: '#75604D',
@@ -98,65 +89,11 @@ export function Toolbar() {
   return (
     <>
       <div
-        className="fixed bottom-6 left-5 z-[60] flex items-end gap-3"
+        className="fixed bottom-7 left-1/2 z-[60] -translate-x-1/2"
         style={{ pointerEvents: 'auto' }}
       >
-        <div className="rounded-[30px] border border-white/60 bg-white/74 p-2 shadow-[0_14px_40px_rgba(60,44,28,0.14)] backdrop-blur-2xl">
-          <div className="mb-1 px-2.5 pt-1">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[#AA927C]">
-              Dock
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            {dockButtons.map((button) => {
-              const Icon = button.icon;
-
-              return (
-                <button
-                  key={button.id}
-                  onClick={button.onClick}
-                  className={`group flex min-w-[120px] items-center gap-3 rounded-[22px] px-3.5 py-3 text-left transition-all duration-300 ${
-                    button.active
-                      ? 'translate-x-1 shadow-[0_12px_24px_rgba(80,56,36,0.14)]'
-                      : 'hover:translate-x-1 hover:bg-white/70'
-                  }`}
-                  style={{
-                    background: button.active
-                      ? `linear-gradient(135deg, ${button.accent}, ${button.accent}CC)`
-                      : 'rgba(255,255,255,0.28)',
-                    color: button.active ? '#FFFFFF' : '#5A4A3A',
-                  }}
-                >
-                  <div
-                    className="flex h-9 w-9 items-center justify-center rounded-2xl shadow-sm"
-                    style={{
-                      background: button.active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.74)',
-                    }}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{button.label}</div>
-                    <div
-                      className="text-[10px] uppercase tracking-[0.16em]"
-                      style={{ color: button.active ? 'rgba(255,255,255,0.78)' : '#A08972' }}
-                    >
-                      {button.id === 'paper' && 'paper'}
-                      {button.id === 'config' && 'model'}
-                      {button.id === 'workflow' && 'ops'}
-                      {button.id === 'chat' && 'agent'}
-                      {button.id === 'help' && 'tips'}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {showInfo && (
-          <div className="mb-2 w-[320px] rounded-[28px] border border-white/60 bg-white/88 p-5 shadow-[0_16px_44px_rgba(60,44,28,0.18)] backdrop-blur-2xl animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="mb-3 w-[340px] rounded-[28px] border border-white/60 bg-white/88 p-5 shadow-[0_16px_44px_rgba(60,44,28,0.18)] backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#A08972]">
@@ -187,16 +124,56 @@ export function Toolbar() {
                 <span>“编排”面板里可以看组织树、工作流进度、评审结果和记忆。</span>
               </div>
               <div className="flex items-start gap-3">
-                <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-[#C48A55]" />
-                <span>“论文”会打开完整参考材料，适合边看边问边验证系统设计。</span>
-              </div>
-              <div className="flex items-start gap-3">
                 <Settings className="mt-0.5 h-4 w-4 shrink-0 text-[#2F6A54]" />
                 <span>如果模型调用异常，先检查 `API Key`、`Base URL` 和模型名称是否可用。</span>
               </div>
             </div>
           </div>
         )}
+
+        <div className="rounded-[32px] border border-white/60 bg-white/76 px-4 py-2.5 shadow-[0_14px_40px_rgba(60,44,28,0.14)] backdrop-blur-2xl">
+          <div className="grid grid-cols-4 gap-2">
+            {dockButtons.map((button) => {
+              const Icon = button.icon;
+
+              return (
+                <button
+                  key={button.id}
+                  onClick={button.onClick}
+                  className={`group flex min-w-[138px] items-center gap-3 rounded-[22px] px-4 py-2.5 text-left transition-all duration-300 ${
+                    button.active
+                      ? '-translate-y-1 shadow-[0_12px_24px_rgba(80,56,36,0.14)]'
+                      : 'hover:-translate-y-1 hover:bg-white/70'
+                  }`}
+                  style={{
+                    background: button.active
+                      ? `linear-gradient(135deg, ${button.accent}, ${button.accent}CC)`
+                      : 'rgba(255,255,255,0.28)',
+                    color: button.active ? '#FFFFFF' : '#5A4A3A',
+                  }}
+                >
+                  <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl shadow-sm"
+                    style={{
+                      background: button.active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.74)',
+                    }}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">{button.label}</div>
+                    <div
+                      className="text-[10px] uppercase tracking-[0.16em]"
+                      style={{ color: button.active ? 'rgba(255,255,255,0.78)' : '#A08972' }}
+                    >
+                      {button.sublabel}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {selectedPet && (

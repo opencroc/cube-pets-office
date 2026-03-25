@@ -104,6 +104,12 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+data/database.json
+
+# Runtime agent memory / session artifacts
+data/agents/*/sessions/
+data/agents/*/memory/
+data/agents/*/reports/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
