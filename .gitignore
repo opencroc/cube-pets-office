@@ -112,6 +112,8 @@ data/progress.md
 data/agents/*/sessions/
 data/agents/*/memory/
 data/agents/*/reports/
+data/agents/*/SOUL.md
+data/agents/*/HEARTBEAT.md
 
 # Local debug artifacts
 .manus-logs/
