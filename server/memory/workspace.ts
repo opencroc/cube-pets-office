@@ -80,3 +80,7 @@ export function getAgentWorkspaceScopeDir(
 export function getAgentsRootDir(): string {
   return AGENTS_ROOT;
 }
+
+export function ensureAllAgentWorkspaces(agentIds: string[]): void {
+  ensureAgentWorkspaces(agentIds);
+}

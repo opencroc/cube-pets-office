@@ -5,10 +5,8 @@
  */
 import db from '../db/index.js';
 import { sessionStore } from '../memory/session-store.js';
-import {
-  ensureAgentWorkspace,
-  type AgentWorkspaceScope,
-} from '../memory/workspace.js';
+import { soulStore } from '../memory/soul-store.js';
+import { ensureAgentWorkspace, type AgentWorkspaceScope } from '../memory/workspace.js';
 import { readAgentWorkspaceFile, writeAgentWorkspaceFile } from './access-guard.js';
 import { callLLM, callLLMJson } from './llm-client.js';
 import { messageBus } from './message-bus.js';
@@ -50,7 +48,7 @@ export class Agent {
       role: row.role,
       managerId: row.manager_id,
       model: row.model,
-      soulMd: row.soul_md || '',
+      soulMd: soulStore.getSoulText(agentId, row.soul_md || ''),
     });
   }
 
@@ -186,6 +184,7 @@ Important JSON requirements:
    * Build the system prompt from SOUL.md plus runtime identity info.
    */
   private buildSystemPrompt(): string {
+    this.config.soulMd = soulStore.getSoulText(this.config.id, this.config.soulMd);
     return `${this.config.soulMd}
 
 ---

@@ -79,6 +79,18 @@ export function writeAgentWorkspaceFile(
   return filePath;
 }
 
+export function appendAgentWorkspaceFile(
+  agentId: string,
+  relativePath: string,
+  content: string,
+  scope: AgentWorkspaceScope = 'root'
+): string {
+  const filePath = resolveAgentWorkspacePath(agentId, relativePath, scope);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, content, 'utf-8');
+  return filePath;
+}
+
 export function agentWorkspaceFileExists(
   agentId: string,
   relativePath: string,

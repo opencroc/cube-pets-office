@@ -41,13 +41,16 @@ async function startServer() {
   seedAgents();
   await initializeAgentRuntime();
 
+  const db = (await import("./db/index.js")).default;
+  const { soulStore } = await import("./memory/soul-store.js");
+  soulStore.ensureAllSoulFiles();
+
   // Initialize agent registry
   const { registry } = await import("./core/registry.js");
   registry.init();
   const { sessionStore } = await import("./memory/session-store.js");
 
   // Recover workflows that were left running across restarts.
-  const db = (await import("./db/index.js")).default;
   for (const workflow of db.getWorkflows()) {
     if (workflow.status === "running") {
       db.updateWorkflow(workflow.id, {
