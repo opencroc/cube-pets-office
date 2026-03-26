@@ -86,9 +86,9 @@
 ### 纯前端迁移分阶段计划
 
 1. **Phase PF-1：抽 runtime 内核**
-   - [ ] 从当前 `workflow-engine`、`agent`、`message-bus` 中提取不依赖 Node 的核心编排逻辑
-   - [ ] 为 runtime 定义统一接口：workflow repository、memory repository、report repository、event emitter、llm provider
-   - [ ] 先做到“同一份 workflow 逻辑可被 server mode 与 browser mode 共同调用”
+   - [x] 从当前 `workflow-engine`、`agent`、`message-bus` 中提取不依赖 Node 的核心编排逻辑
+   - [x] 为 runtime 定义统一接口：workflow repository、memory repository、report repository、event emitter、llm provider
+   - [x] 先做到“同一份 workflow 逻辑可被 server mode 与 browser mode 共同调用”
 
 2. **Phase PF-2：浏览器存储替换服务端本地文件**
    - [ ] 用 IndexedDB 或等价浏览器存储替代 `database.json`
