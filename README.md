@@ -1,5 +1,7 @@
 # Cube Pets Office
 
+![Cube Pets Office banner](./banner.png)
+
 一个把“单条自然语言指令”编排成多智能体协作流程的 3D 可视化项目。
 
 项目目前已经从最初的展示型页面，演进成一个可运行的多智能体编排系统：
