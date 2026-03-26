@@ -319,7 +319,7 @@ class EvolutionService {
 
     const summaries: EvolutionAgentSummary[] = [];
 
-    for (const [agentId, agentTasks] of tasksByAgent.entries()) {
+    for (const [agentId, agentTasks] of Array.from(tasksByAgent.entries())) {
       const agent = db.getAgent(agentId);
       if (!agent) {
         continue;

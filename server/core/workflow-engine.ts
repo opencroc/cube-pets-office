@@ -8,6 +8,7 @@ import type { TaskRow } from '../db/index.js';
 import type { FinalWorkflowReport } from '../memory/report-store.js';
 import { reportStore } from '../memory/report-store.js';
 import { sessionStore } from '../memory/session-store.js';
+import { soulStore } from '../memory/soul-store.js';
 import { evolutionService } from './evolution.js';
 import { registry } from './registry.js';
 import { messageBus } from './message-bus.js';
