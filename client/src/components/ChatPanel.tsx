@@ -8,6 +8,7 @@ import {
   getAgentLabel,
 } from '@/lib/agent-config';
 import { useAppStore, type ChatMessage } from '@/lib/store';
+import { callBrowserLLM } from '@/lib/browser-llm';
 
 const PAPER_CONTEXT = `You are a cute cube-pet research assistant working in a warm study.
 
@@ -30,6 +31,7 @@ export function ChatPanel() {
     toggleChat,
     isLoading,
     setLoading,
+    aiConfig,
     selectedPet,
   } = useAppStore();
 
@@ -67,35 +69,47 @@ export function ChatPanel() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const messages = [
+        {
+          role: 'system' as const,
+          content: `${PAPER_CONTEXT}\n\nCurrent role: ${agentName} ${agentEmoji}\nRole description: ${agentRole}`,
         },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: `${PAPER_CONTEXT}\n\nCurrent role: ${agentName} ${agentEmoji}\nRole description: ${agentRole}`,
-            },
-            ...chatMessages.slice(-10).map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-            { role: 'user', content: currentInput },
-          ],
+        ...chatMessages.slice(-10).map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        { role: 'user' as const, content: currentInput },
+      ];
+
+      let assistantContent = 'I lost my train of thought. Please ask me again.';
+
+      if (aiConfig.mode === 'browser_direct') {
+        const data = await callBrowserLLM(messages, aiConfig, {
           maxTokens: 400,
           temperature: 0.7,
-        }),
-      });
+        });
+        assistantContent = data.content || assistantContent;
+      } else {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages,
+            maxTokens: 400,
+            temperature: 0.7,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(`API ${response.status}: ${errorText.substring(0, 120)}`);
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          throw new Error(`API ${response.status}: ${errorText.substring(0, 120)}`);
+        }
+
+        const data = await response.json();
+        assistantContent = data.content || assistantContent;
       }
-
-      const data = await response.json();
-      const assistantContent = data.content || 'I lost my train of thought. Please ask me again.';
 
       addMessage({
         role: 'assistant',
@@ -113,7 +127,7 @@ export function ChatPanel() {
     } finally {
       setLoading(false);
     }
-  }, [addMessage, agentEmoji, agentId, agentName, agentRole, chatMessages, input, isLoading, setLoading]);
+  }, [addMessage, agentEmoji, agentId, agentName, agentRole, aiConfig, chatMessages, input, isLoading, setLoading]);
 
   if (!isChatOpen) return null;
 
@@ -129,7 +143,9 @@ export function ChatPanel() {
           </div>
           <div>
             <h3 className="text-sm font-bold text-[#3A2A1A]">Chat with {agentName}</h3>
-            <p className="text-[10px] text-[#8B7355]">{agentRole}</p>
+            <p className="text-[10px] text-[#8B7355]">
+              {agentRole} / {aiConfig.mode === 'browser_direct' ? 'Browser Direct' : 'Server Proxy'}
+            </p>
           </div>
           <span className="text-lg">{agentEmoji}</span>
         </div>

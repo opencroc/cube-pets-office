@@ -3,16 +3,16 @@
  * Manages: PDF viewer, AI config, pet interactions, UI panels
  */
 import { create } from 'zustand';
-
-export interface AIConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  modelReasoningEffort: string;
-  maxContext: number;
-  providerName: string;
-  wireApi: string;
-}
+import {
+  createBrowserAIConfig,
+  createDefaultAIConfig,
+  createServerAIConfig,
+  loadPersistedAISettings,
+  savePersistedAISettings,
+  type AIConfig,
+  type AIConfigMode,
+} from './ai-config';
+export type { AIConfig, AIConfigMode } from './ai-config';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -30,9 +30,13 @@ interface AppState {
   openPdf: () => void;
   closePdf: () => void;
 
+  serverAIConfig: AIConfig;
   aiConfig: AIConfig;
   isAIConfigLoading: boolean;
   hydrateAIConfig: () => Promise<void>;
+  updateBrowserAIConfig: (patch: Partial<AIConfig>) => void;
+  setAIConfigMode: (mode: AIConfigMode) => void;
+  resetBrowserAIConfig: () => void;
   isConfigOpen: boolean;
   toggleConfig: () => void;
 
@@ -53,17 +57,9 @@ interface AppState {
   setLoadingProgress: (progress: number) => void;
 }
 
-const DEFAULT_AI_CONFIG: AIConfig = {
-  apiKey: '',
-  baseUrl: '',
-  model: '',
-  modelReasoningEffort: 'high',
-  maxContext: 1000000,
-  providerName: '',
-  wireApi: 'chat_completions',
-};
+const DEFAULT_AI_CONFIG = createDefaultAIConfig();
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   currentPage: 1,
   totalPages: 33,
   isPdfOpen: false,
@@ -72,6 +68,7 @@ export const useAppStore = create<AppState>((set) => ({
   openPdf: () => set({ isPdfOpen: true }),
   closePdf: () => set({ isPdfOpen: false }),
 
+  serverAIConfig: DEFAULT_AI_CONFIG,
   aiConfig: DEFAULT_AI_CONFIG,
   isAIConfigLoading: false,
   hydrateAIConfig: async () => {
@@ -84,15 +81,66 @@ export const useAppStore = create<AppState>((set) => ({
       }
 
       const data = await response.json();
+      const serverAIConfig = createServerAIConfig(data.config || {});
+      const persisted = loadPersistedAISettings(serverAIConfig);
+      const aiConfig =
+        persisted.mode === 'browser_direct'
+          ? persisted.browserConfig
+          : serverAIConfig;
+
       set({
-        aiConfig: { ...DEFAULT_AI_CONFIG, ...data.config },
+        serverAIConfig,
+        aiConfig,
         isAIConfigLoading: false,
       });
     } catch (error) {
       console.error('[AI Config] Failed to hydrate config:', error);
-      set({ isAIConfigLoading: false });
+      const fallbackServerAIConfig = get().serverAIConfig || DEFAULT_AI_CONFIG;
+      const persisted = loadPersistedAISettings(fallbackServerAIConfig);
+      const aiConfig =
+        persisted.mode === 'browser_direct'
+          ? persisted.browserConfig
+          : fallbackServerAIConfig;
+
+      set({
+        serverAIConfig: fallbackServerAIConfig,
+        aiConfig,
+        isAIConfigLoading: false,
+      });
       throw error;
     }
+  },
+  updateBrowserAIConfig: (patch) => {
+    const state = get();
+    const nextConfig = createBrowserAIConfig(
+      {
+        ...state.aiConfig,
+        ...patch,
+      },
+      state.serverAIConfig
+    );
+
+    savePersistedAISettings('browser_direct', nextConfig);
+    set({ aiConfig: nextConfig });
+  },
+  setAIConfigMode: (mode) => {
+    const state = get();
+
+    if (mode === 'browser_direct') {
+      const nextConfig = createBrowserAIConfig(state.aiConfig, state.serverAIConfig);
+      savePersistedAISettings('browser_direct', nextConfig);
+      set({ aiConfig: nextConfig });
+      return;
+    }
+
+    savePersistedAISettings('server_proxy', state.aiConfig);
+    set({ aiConfig: state.serverAIConfig });
+  },
+  resetBrowserAIConfig: () => {
+    const state = get();
+    const nextConfig = createBrowserAIConfig({}, state.serverAIConfig);
+    savePersistedAISettings('browser_direct', nextConfig);
+    set({ aiConfig: nextConfig });
   },
   isConfigOpen: false,
   toggleConfig: () => set((s) => ({ isConfigOpen: !s.isConfigOpen })),
