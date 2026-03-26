@@ -8,6 +8,7 @@ import {
   getAgentLabel,
 } from '@/lib/agent-config';
 import { callBrowserLLM } from '@/lib/browser-llm';
+import { CAN_USE_ADVANCED_RUNTIME } from '@/lib/deploy-target';
 import { useAppStore, type ChatMessage } from '@/lib/store';
 
 const PAPER_CONTEXT = `You are a cute cube-pet research assistant working in a warm study.
@@ -27,27 +28,37 @@ function buildFrontendModeReply({
   agentName,
   agentEmoji,
   agentRole,
+  canUseAdvancedRuntime,
 }: {
   input: string;
   agentName: string;
   agentEmoji: string;
   agentRole: string;
+  canUseAdvancedRuntime: boolean;
 }) {
   const normalized = input.toLowerCase();
 
   if (/workflow|阶段|phase|流程|编排/.test(normalized)) {
-    return `${agentEmoji} ${agentName}：现在是纯前端模式，我先用本地演示带你过一遍主链路。系统会按 CEO -> Manager -> Worker 展开，再经过 review、meta-audit、revision、verify、summary、feedback 和 evolution。想跑真实服务端工作流的话，切到“高级模式”就可以。`;
+    return canUseAdvancedRuntime
+      ? `${agentEmoji} ${agentName}：现在是纯前端模式，我先用本地演示带你过一遍主链路。系统会按 CEO -> Manager -> Worker 展开，再经过 review、meta-audit、revision、verify、summary、feedback 和 evolution。想跑真实服务端工作流的话，切到“高级模式”就可以。`
+      : `${agentEmoji} ${agentName}：当前是 GitHub Pages 静态演示模式，我可以带你看完整的工作流结构和界面分工。系统设计仍然是 CEO -> Manager -> Worker，再经过 review、meta-audit、revision、verify、summary、feedback 和 evolution，只是这里不会真的调用服务端执行。`;
   }
 
   if (/memory|记忆|soul|heartbeat|报告/.test(normalized)) {
-    return `${agentEmoji} ${agentName}：当前前端模式会优先保留浏览器内体验，所以我可以解释 memory、SOUL、heartbeat 和报告结构，但默认不会直接依赖服务端。如果你想查看真实报告和历史记录，可以切到“高级模式”。`;
+    return canUseAdvancedRuntime
+      ? `${agentEmoji} ${agentName}：当前前端模式会优先保留浏览器内体验，所以我可以解释 memory、SOUL、heartbeat 和报告结构，但默认不会直接依赖服务端。如果你想查看真实报告和历史记录，可以切到“高级模式”。`
+      : `${agentEmoji} ${agentName}：当前部署只保留浏览器内体验，所以我可以解释 memory、SOUL、heartbeat 和报告结构，但这里不会生成真实服务端报告或历史记录。`;
   }
 
   if (/怎么用|如何|help|模式|mode/.test(normalized)) {
-    return `${agentEmoji} ${agentName}：你可以先用纯前端模式浏览 3D 场景、查看组织结构、体验本地聊天；准备好后再切到高级模式，走真实服务端工作流。如果你已经在浏览器里配好了 API，也可以继续留在前端模式做本地直连聊天。`;
+    return canUseAdvancedRuntime
+      ? `${agentEmoji} ${agentName}：你可以先用纯前端模式浏览 3D 场景、查看组织结构、体验本地聊天；准备好后再切到高级模式，走真实服务端工作流。如果你已经在浏览器里配好了 API，也可以继续留在前端模式做本地直连聊天。`
+      : `${agentEmoji} ${agentName}：你现在用的是 GitHub Pages 静态演示版，可以先浏览 3D 场景、查看组织结构、体验本地聊天和界面流程。这个站点不会切到服务端工作流，但本地部署或服务端版本仍然保留完整能力。`;
   }
 
-  return `${agentEmoji} ${agentName}：我现在在纯前端模式里值班，角色定位是“${agentRole}”。我可以先帮你理解论文思路、组织结构和界面分工；如果你想让我真正调用服务端链路，切到“高级模式”就可以。`;
+  return canUseAdvancedRuntime
+    ? `${agentEmoji} ${agentName}：我现在在纯前端模式里值班，角色定位是“${agentRole}”。我可以先帮你理解论文思路、组织结构和界面分工；如果你想让我真正调用服务端链路，切到“高级模式”就可以。`
+    : `${agentEmoji} ${agentName}：我现在在 GitHub Pages 静态演示模式里值班，角色定位是“${agentRole}”。我可以先帮你理解论文思路、组织结构和界面分工；这个版本不会真正调用服务端链路。`;
 }
 
 function getModeLabel(runtimeMode: 'frontend' | 'advanced', browserDirect: boolean) {
@@ -82,6 +93,7 @@ export function ChatPanel() {
   const agentRole = getAgentChatRole(agentId);
   const isFrontendMode = runtimeMode === 'frontend';
   const isBrowserDirect = aiConfig.mode === 'browser_direct';
+  const canUseAdvancedRuntime = CAN_USE_ADVANCED_RUNTIME;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,6 +141,7 @@ export function ChatPanel() {
           agentName,
           agentEmoji,
           agentRole,
+          canUseAdvancedRuntime,
         });
       } else if (isBrowserDirect) {
         const data = await callBrowserLLM(messages, aiConfig, {
@@ -181,6 +194,7 @@ export function ChatPanel() {
     agentName,
     agentRole,
     aiConfig,
+    canUseAdvancedRuntime,
     chatMessages,
     input,
     isBrowserDirect,
@@ -251,9 +265,19 @@ export function ChatPanel() {
             <p className="text-xs leading-relaxed text-[#8B7355]">
               {isFrontendMode ? (
                 <>
-                  Ask about the paper, the browser runtime,
-                  <br />
-                  or when to switch to Advanced Mode.
+                  {canUseAdvancedRuntime ? (
+                    <>
+                      Ask about the paper, the browser runtime,
+                      <br />
+                      or when to switch to Advanced Mode.
+                    </>
+                  ) : (
+                    <>
+                      Ask about the paper, the static demo flow,
+                      <br />
+                      or what stays available in the Pages build.
+                    </>
+                  )}
                 </>
               ) : (
                 <>

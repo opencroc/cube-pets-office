@@ -1,0 +1,2 @@
+export const IS_GITHUB_PAGES = __GITHUB_PAGES__;
+export const CAN_USE_ADVANCED_RUNTIME = !IS_GITHUB_PAGES;

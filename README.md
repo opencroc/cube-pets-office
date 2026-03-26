@@ -5,113 +5,110 @@
 <h1 align="center">Cube Pets Office</h1>
 
 <p align="center">
-  一个把“单条自然语言指令”编排成 18 个智能体协同工作的 3D 多智能体系统原型。
+  把一条自然语言指令编排成 18 个 Agent 协同工作的 3D 多智能体办公原型。
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/status-活跃原型-0ea5e9" />
+  <img alt="status" src="https://img.shields.io/badge/status-active%20prototype-0ea5e9" />
   <img alt="agents" src="https://img.shields.io/badge/agents-18-22c55e" />
-  <img alt="workflow" src="https://img.shields.io/badge/workflow-10%20阶段-f97316" />
+  <img alt="workflow" src="https://img.shields.io/badge/workflow-10%20stages-f97316" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-111827" />
 </p>
 
 ## 项目概览
 
-Cube Pets Office 最初是一个 3D 展示型页面，现在已经演进成一个可运行的多智能体编排系统：
+Cube Pets Office 是一个把 3D 场景展示、Agent 组织结构、工作流编排和聊天交互放在同一界面的实验性产品原型。
 
-- 前端用 3D 办公室场景展示 18 个智能体的实时状态
-- 后端实现了 10 阶段 workflow 编排管道
-- WebSocket 会实时推送 Agent 状态和消息流
-- 支持记忆、评审、修订、验证和演化闭环
-- 聊天面板和 workflow 共用同一套服务端 AI 配置
-- AI 配置以 `.env` 为唯一真源
+当前仓库已经包含：
 
-整个系统的主链路可以概括为：
+- 18 个 Agent 的 3D 办公室场景
+- 完整的 10 阶段 workflow 编排链路
+- 工作流、组织、评审、记忆、历史等前端面板
+- 基于 Express 和 Socket.IO 的服务端运行时
+- 统一的服务端聊天入口 `/api/chat`
+- 本地前端预览模式与完整服务端模式双入口
+- 面向 GitHub Pages 的纯静态演示构建
 
-> 用户输入一条指令 -> CEO 分解方向 -> 部门经理规划 -> Worker 执行 -> 评审 -> 审计 -> 修订 -> 验证 -> 汇总 -> 反馈 -> 演化
+工作流主链路如下：
 
-## 当前已实现
+> 用户指令 -> CEO 拆解方向 -> Manager 规划任务 -> Worker 执行 -> Review -> Meta Audit -> Revision -> Verify -> Summary -> Feedback -> Evolution
 
-- 18 个智能体已经完成注册与加载
-- 18 个智能体已经在 3D 场景中完成布局
-- 工作流已经支持完整 10 阶段运行：
-  `direction -> planning -> execution -> review -> meta_audit -> revision -> verify -> summary -> feedback -> evolution`
-- 前端已经提供以下视图：
-  - 指令视图
-  - 组织视图
-  - 进度视图
-  - 评审视图
-  - 记忆视图
-  - 历史视图
-- 已实现消息流粒子动画和阶段联动动画
-- 已实现短期记忆注入
-- 已实现历史工作流摘要检索
-- 已实现基于 `soul_md` 的 persona 演化
-- 已实现统一的服务端聊天入口 `/api/chat`
-- 已实现基于 `.env` 的统一模型配置链路
+## 当前运行模式
 
-## 当前仍未完成
+仓库现在有 3 种清晰分离的运行方式：
 
-这个仓库现在是“可运行原型”，不是“完整框架”。
+### 1. Frontend Mode
 
-- 严格的文件系统隔离还没有落地，当前更接近约定式隔离
-- 中期记忆还不是向量检索，当前是摘要加关键词检索
-- 长期记忆目前落在存储层的 `soul_md` 字段，不是文件版 `SOUL.md` 自动更新
-- heartbeat / 定时自主搜索 / 自主报告机制尚未实现
-- 历史文档里仍有一部分旧内容和待清理段落
+默认入口，适合本地体验和演示：
+
+- 不依赖服务端即可启动界面
+- 可浏览 3D 场景、组织结构、论文内容和本地演示聊天
+- 适合做 UI 验证、交互走查和纯前端分享
+
+### 2. Advanced Mode
+
+完整链路模式，保留现有服务端实现：
+
+- 连接 `/api` 与 Socket.IO
+- 执行真实工作流、报告、记忆和服务端模型调用
+- 需要 `.env` 中的模型配置
+
+### 3. GitHub Pages Static Demo
+
+专门用于 GitHub Pages 的静态构建：
+
+- 只影响 Pages 构建，不影响本地和服务端版本
+- 强制停留在前端静态演示路径
+- 不连接服务端，不触发真实多 Agent 工作流
+- 仍可展示 3D 场景、界面流程、本地演示聊天和工作流结构
 
 ## 技术栈
 
 - 前端：React 19、Vite、TypeScript、Zustand
 - 3D：Three.js、React Three Fiber、Drei
 - 后端：Express、Socket.IO、TypeScript
-- AI：OpenAI 兼容接口
-- 存储：本地 JSON 数据库 + Agent runtime 工作空间文件
+- AI 接入：OpenAI 兼容接口
+- 本地存储：JSON 数据文件
 
 ## 项目结构
 
 ```text
 client/   前端应用、3D 场景、工作流面板、聊天面板
-server/   API 路由、Workflow Engine、Agent Registry、Memory、Socket
+server/   API、Socket、Workflow Engine、Agent Registry、Memory
 shared/   共享类型与工具
-data/     本地运行时状态和 Agent 工作空间产物
-scripts/  本地开发辅助脚本
+data/     本地运行期数据和 Agent 产物
+scripts/  启动、停止、构建辅助脚本
 ```
-
-## 运行模式
-
-当前仓库默认采用“纯前端模式优先，高级模式可选”的产品化入口：
-
-- `纯前端模式`：默认启动路径，适合首次打开、分享演示、浏览 3D 场景、阅读论文和体验本地聊天；不要求服务端和 `.env`
-- `高级模式`：保留现有服务端实现，启用 `/api`、Socket.IO、真实工作流、heartbeat 报告和服务端模型调用
-
-现有服务端链路仍然保留，在确认纯前端链路稳定前不会删除。
 
 ## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-corepack pnpm install
+pnpm install
 ```
 
-### 2. 默认先启动纯前端模式
+### 2. 启动前端预览模式
 
 ```bash
-corepack pnpm run dev:frontend
+pnpm run dev:frontend
 ```
 
-默认本地地址：
+默认地址：
 
 - 前端：`http://localhost:3000`
 
-这一模式不要求 `.env`，适合先体验界面与组织结构。
+这个模式不要求 `.env`，适合先看界面、场景和交互。
 
-### 3. 需要真实工作流时再切到高级模式
+### 3. 启动完整服务端链路
 
-先复制 `.env.example` 为 `.env`，并填入你自己的模型服务配置。
+先复制环境变量模板：
 
-一个最小示例：
+```bash
+cp .env.example .env
+```
+
+然后在 `.env` 中填入模型配置。最小示例：
 
 ```dotenv
 PORT=3001
@@ -125,61 +122,96 @@ LLM_REASONING_EFFORT=high
 LLM_TIMEOUT_MS=45000
 ```
 
-然后启动完整链路：
+启动完整链路：
 
 ```bash
-corepack pnpm run dev:advanced
+pnpm run dev:advanced
 ```
 
-高级模式默认地址：
+默认地址：
 
 - 前端：`http://localhost:3000`
 - 后端 API：`http://localhost:3001/api`
 
-也可以分别启动：
+也可以分开启动：
 
 ```bash
-corepack pnpm run dev:frontend
-corepack pnpm run dev:server
+pnpm run dev:frontend
+pnpm run dev:server
 ```
 
 ### 4. 类型检查
 
 ```bash
-corepack pnpm run check
+pnpm run check
 ```
 
-## 运行时数据
+## GitHub Pages 部署
 
-项目运行后会在 `data/` 下生成本地 runtime 数据，包括：
+仓库已经内置 GitHub Pages 专用构建和工作流：
+
+- Pages 构建命令：`npm run build:pages`
+- 工作流文件：`.github/workflows/deploy-pages.yml`
+- 构建输出目录：`dist/public`
+
+Pages 构建会自动做这些事情：
+
+- 为仓库子路径设置正确的 `base`
+- 注入 `__GITHUB_PAGES__` 构建标记
+- 禁用仅开发期使用的 Manus debug collector
+- 隐藏或禁用需要服务端的高级模式入口
+
+也就是说：
+
+- GitHub Pages 只提供纯静态演示版
+- 本地 `pnpm run dev:frontend` 和 `pnpm run dev:advanced` 的行为不变
+- 普通 `pnpm run build` 的服务端产物不变
+
+如果要启用 Pages 部署，请确保仓库的 GitHub Pages 来源使用 GitHub Actions，然后推送到 `main` 分支即可触发 `.github/workflows/deploy-pages.yml`。
+
+## 本地运行数据
+
+运行过程中会在 `data/` 下生成本地状态和产物，例如：
 
 - `data/database.json`
 - `data/agents/*/sessions/`
 - `data/agents/*/memory/`
 - `data/agents/*/reports/`
 
-这些文件属于本地运行状态，不属于源码本身，因此公开仓库默认会忽略它们。
+这些文件属于运行期数据，不属于源码本身。
+
+## 主要脚本
+
+- `pnpm run dev:frontend`：只启动前端预览
+- `pnpm run dev:server`：只启动服务端
+- `pnpm run dev:advanced`：同时启动前端与服务端
+- `pnpm run build`：构建正常生产版本和服务端产物
+- `npm run build:pages`：构建 GitHub Pages 静态产物
+- `pnpm run check`：TypeScript 类型检查
 
 ## 主要 API
 
-当前后端暴露的主要接口包括：
-
-- `POST /api/workflows`：启动一条新的工作流
+- `POST /api/workflows`：启动新工作流
 - `GET /api/workflows`：获取工作流列表
-- `GET /api/workflows/:id`：获取某条工作流详情
+- `GET /api/workflows/:id`：获取工作流详情
 - `GET /api/agents`：获取全部 Agent
 - `GET /api/agents/:id/memory/recent`：获取最近记忆
-- `GET /api/agents/:id/memory/search`：搜索历史摘要
-- `GET /api/config/ai`：查看当前 AI 配置来源和运行参数
+- `GET /api/agents/:id/memory/search`：搜索历史记忆
+- `GET /api/config/ai`：查看当前 AI 配置来源与运行参数
 - `POST /api/chat`：统一的服务端聊天入口
 
-## 开源说明
+## 当前边界
 
-- License：MIT
-- 当前公开的是项目的工作中版本
-- 公开仓库不包含本地 memory / session / local config 快照
-- 如果你 fork 本项目，建议自行配置并保管 `.env`
+当前仓库是“可运行原型”，不是最终产品形态。已知边界包括：
 
-## 路线图
+- 一些历史文档和实验性实现仍在整理
+- 长期记忆与演化机制仍有继续产品化空间
+- GitHub Pages 版本是静态演示版，不提供真实服务端执行
 
-更细的阶段规划，以及“哪些能力已经完成、哪些仍未完成”的拆分说明，见 `ROADMAP.md`。
+## Roadmap
+
+更细的阶段规划与完成状态见 [ROADMAP.md](./ROADMAP.md)。
+
+## License
+
+MIT

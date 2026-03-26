@@ -33,6 +33,7 @@ import type {
   BrowserRuntimeExportBundle,
   BrowserRuntimeMetadata,
 } from '@/lib/browser-runtime-storage';
+import { CAN_USE_ADVANCED_RUNTIME } from '@/lib/deploy-target';
 import type { AIConfig } from '@/lib/store';
 import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
@@ -258,8 +259,9 @@ export function ConfigPanel() {
             <div>
               <p className="text-xs font-bold text-[#3A2A1A]">Run Mode</p>
               <p className="mt-1 text-[10px] leading-relaxed text-[#8B7355]">
-                Frontend Mode keeps workflow execution inside the browser. Advanced Mode uses
-                the existing server runtime, reports, and sockets.
+                {CAN_USE_ADVANCED_RUNTIME
+                  ? 'Frontend Mode keeps workflow execution inside the browser. Advanced Mode uses the existing server runtime, reports, and sockets.'
+                  : 'GitHub Pages build only exposes the browser runtime path, so this static site stays in Frontend Mode.'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -274,17 +276,19 @@ export function ConfigPanel() {
                 <Monitor className="w-3.5 h-3.5" />
                 Frontend
               </button>
-              <button
-                onClick={() => void handleRuntimeModeChange('advanced')}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition-colors ${
-                  isFrontendMode
-                    ? 'bg-[#F7F1EA] text-[#5A4A3A] hover:bg-[#F0E8E0]'
-                    : 'bg-[#D4845A] text-white'
-                }`}
-              >
-                <Server className="w-3.5 h-3.5" />
-                Advanced
-              </button>
+              {CAN_USE_ADVANCED_RUNTIME && (
+                <button
+                  onClick={() => void handleRuntimeModeChange('advanced')}
+                  className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition-colors ${
+                    isFrontendMode
+                      ? 'bg-[#F7F1EA] text-[#5A4A3A] hover:bg-[#F0E8E0]'
+                      : 'bg-[#D4845A] text-white'
+                  }`}
+                >
+                  <Server className="w-3.5 h-3.5" />
+                  Advanced
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -369,14 +373,16 @@ export function ConfigPanel() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-2">
-          <button
-            onClick={() => void handleSyncRuntime()}
-            disabled={isRuntimeSyncing}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2D5F4A] to-[#3D7F5A] px-3 py-2.5 text-xs font-bold text-white transition-all hover:from-[#245040] hover:to-[#2D6F4A] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRuntimeSyncing ? 'animate-spin' : ''}`} />
-            {isRuntimeSyncing ? 'Syncing Browser Runtime...' : 'Sync Browser Runtime'}
-          </button>
+          {CAN_USE_ADVANCED_RUNTIME && (
+            <button
+              onClick={() => void handleSyncRuntime()}
+              disabled={isRuntimeSyncing}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2D5F4A] to-[#3D7F5A] px-3 py-2.5 text-xs font-bold text-white transition-all hover:from-[#245040] hover:to-[#2D6F4A] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRuntimeSyncing ? 'animate-spin' : ''}`} />
+              {isRuntimeSyncing ? 'Syncing Browser Runtime...' : 'Sync Browser Runtime'}
+            </button>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => void handleExportRuntime()}

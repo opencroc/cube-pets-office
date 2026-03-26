@@ -22,6 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import { CAN_USE_ADVANCED_RUNTIME } from "@/lib/deploy-target";
 import { useAppStore } from "@/lib/store";
 import {
   useWorkflowStore,
@@ -226,6 +227,7 @@ function DirectiveView() {
   const [directive, setDirective] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isFrontendMode = runtimeMode === "frontend";
+  const canUpgradeToAdvanced = isFrontendMode && CAN_USE_ADVANCED_RUNTIME;
 
   const examples = [
     "本周聚焦用户增长，请各部门制定具体行动方案。",
@@ -237,7 +239,7 @@ function DirectiveView() {
   const handleSubmit = async () => {
     if (!directive.trim() || isSubmitting) return;
 
-    if (isFrontendMode) {
+    if (canUpgradeToAdvanced) {
       await setRuntimeMode("advanced");
       inputRef.current?.focus();
       return;
@@ -268,18 +270,33 @@ function DirectiveView() {
                 <Monitor className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-xs font-bold text-[#3A2A1A]">纯前端模式说明</p>
-                <p className="mt-1 text-[10px] leading-5 text-[#6B5A4A]">
-                  当前默认入口优先浏览器本地体验，不会直接连服务端工作流。你可以先逛 3D
-                  场景、点选角色、体验本地聊天；当你准备执行真实指令时，再切到高级模式。
-                </p>
-                <button
-                  onClick={() => void setRuntimeMode("advanced")}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[#D4845A] px-3 py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[#C9774E]"
-                >
-                  <Server className="h-3.5 w-3.5" />
-                  切到高级模式后执行真实工作流
-                </button>
+                {CAN_USE_ADVANCED_RUNTIME ? (
+                  <>
+                    <p className="text-xs font-bold text-[#3A2A1A]">
+                      纯前端模式说明
+                    </p>
+                    <p className="mt-1 text-[10px] leading-5 text-[#6B5A4A]">
+                      当前默认入口优先浏览器本地体验，不会直接连服务端工作流。你可以先逛
+                      3D 场景、点选角色、体验本地聊天；当你准备执行真实指令时，再切到高级模式。
+                    </p>
+                    <button
+                      onClick={() => void setRuntimeMode("advanced")}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[#D4845A] px-3 py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[#C9774E]"
+                    >
+                      <Server className="h-3.5 w-3.5" />
+                      切到高级模式后执行真实工作流
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-[#3A2A1A]">
+                      GitHub Pages 静态演示模式
+                    </p>
+                    <p className="mt-1 text-[10px] leading-5 text-[#6B5A4A]">
+                      当前部署不连接服务端，只保留浏览器内的前端体验。你仍然可以输入指令、浏览示例内容并体验界面流程，但不会触发真实的多 Agent 工作流。
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -352,10 +369,15 @@ function DirectiveView() {
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>正在启动工作流...</span>
             </>
-          ) : isFrontendMode ? (
+          ) : canUpgradeToAdvanced ? (
             <>
               <Server className="h-4 w-4" />
               <span>切换到高级模式</span>
+            </>
+          ) : isFrontendMode ? (
+            <>
+              <Send className="h-4 w-4" />
+              <span>在静态演示中发布指令</span>
             </>
           ) : (
             <>

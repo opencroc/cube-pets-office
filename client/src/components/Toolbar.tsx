@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { getAgentToolbarLabel } from '@/lib/agent-config';
+import { CAN_USE_ADVANCED_RUNTIME } from '@/lib/deploy-target';
 import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
 
@@ -42,12 +43,12 @@ export function Toolbar() {
   const dockButtons: DockButton[] = [
     {
       id: 'config',
-      label: '配置',
+      label: '设置',
       sublabel: 'MODEL',
       icon: Settings,
       active: isConfigOpen,
       accent: '#2F6A54',
-      onClick: (event) => {
+      onClick: event => {
         event.stopPropagation();
         toggleConfig();
       },
@@ -59,7 +60,7 @@ export function Toolbar() {
       icon: Brain,
       active: isWorkflowPanelOpen,
       accent: '#D07A4F',
-      onClick: (event) => {
+      onClick: event => {
         event.stopPropagation();
         toggleWorkflowPanel();
       },
@@ -71,7 +72,7 @@ export function Toolbar() {
       icon: MessageCircle,
       active: isChatOpen,
       accent: '#A86B4E',
-      onClick: (event) => {
+      onClick: event => {
         event.stopPropagation();
         toggleChat();
       },
@@ -83,9 +84,9 @@ export function Toolbar() {
       icon: HelpCircle,
       active: showInfo,
       accent: '#75604D',
-      onClick: (event) => {
+      onClick: event => {
         event.stopPropagation();
-        setShowInfo((prev) => !prev);
+        setShowInfo(prev => !prev);
       },
     },
   ];
@@ -106,11 +107,14 @@ export function Toolbar() {
                 className="mt-1 text-sm font-bold text-[#3A2A1A]"
                 style={{ fontFamily: "'Playfair Display', serif" }}
               >
-                默认先用纯前端体验，再按需切到高级模式
+                {CAN_USE_ADVANCED_RUNTIME
+                  ? '先用纯前端体验，再按需切到高级模式'
+                  : 'GitHub Pages 版本保留纯前端体验'}
               </h4>
               <p className="mt-1 max-w-[360px] text-[11px] leading-relaxed text-[#6B5A4A]">
-                纯前端模式保留 3D 场景、论文浏览和本地演示聊天，不要求服务端或 `.env`。
-                高级模式会连接 `/api` 与 Socket.IO，启用真实工作流、报告和服务端模型调用。
+                {CAN_USE_ADVANCED_RUNTIME
+                  ? '纯前端模式保留 3D 场景、论文浏览和本地演示聊天，不要求服务端或 .env。高级模式会连接 /api 和 Socket.IO，启用真实工作流、报告和服务端模型调用。'
+                  : '当前面向 GitHub Pages 的静态版本只保留纯前端能力：3D 场景、论文浏览、浏览器内工作流演示和本地聊天体验。'}
               </p>
             </div>
 
@@ -126,17 +130,19 @@ export function Toolbar() {
                 <Monitor className="h-3.5 w-3.5" />
                 纯前端模式
               </button>
-              <button
-                onClick={() => void setRuntimeMode('advanced')}
-                className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all ${
-                  runtimeMode === 'advanced'
-                    ? 'bg-[#D07A4F] text-white shadow-sm'
-                    : 'bg-[#F4EDE4] text-[#6B5A4A] hover:bg-[#ECE1D5]'
-                }`}
-              >
-                <Server className="h-3.5 w-3.5" />
-                高级模式
-              </button>
+              {CAN_USE_ADVANCED_RUNTIME && (
+                <button
+                  onClick={() => void setRuntimeMode('advanced')}
+                  className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all ${
+                    runtimeMode === 'advanced'
+                      ? 'bg-[#D07A4F] text-white shadow-sm'
+                      : 'bg-[#F4EDE4] text-[#6B5A4A] hover:bg-[#ECE1D5]'
+                  }`}
+                >
+                  <Server className="h-3.5 w-3.5" />
+                  高级模式
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -174,7 +180,9 @@ export function Toolbar() {
               </div>
               <div className="flex items-start gap-3">
                 <Settings className="mt-0.5 h-4 w-4 shrink-0 text-[#2F6A54]" />
-                <span>如果模型调用异常，先检查 `API Key`、`Base URL` 和模型名称是否可用。</span>
+                <span>
+                  如果模型调用异常，先检查 API Key、Base URL 和模型名称是否可用。
+                </span>
               </div>
             </div>
           </div>
@@ -182,7 +190,7 @@ export function Toolbar() {
 
         <div className="rounded-[32px] border border-white/60 bg-white/76 px-4 py-2.5 shadow-[0_14px_40px_rgba(60,44,28,0.14)] backdrop-blur-2xl">
           <div className="grid grid-cols-4 gap-2">
-            {dockButtons.map((button) => {
+            {dockButtons.map(button => {
               const Icon = button.icon;
 
               return (

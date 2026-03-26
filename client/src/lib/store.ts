@@ -14,6 +14,7 @@ import {
   type AIConfig,
   type AIConfigMode,
 } from './ai-config';
+import { CAN_USE_ADVANCED_RUNTIME } from './deploy-target';
 
 export type { AIConfig, AIConfigMode } from './ai-config';
 
@@ -85,6 +86,7 @@ function persistAIConfigSnapshot(config: AIConfig) {
 }
 
 function getInitialRuntimeMode(): RuntimeMode {
+  if (!CAN_USE_ADVANCED_RUNTIME) return 'frontend';
   if (typeof window === 'undefined') return 'frontend';
 
   const stored = window.localStorage.getItem(RUNTIME_MODE_STORAGE_KEY);
@@ -116,6 +118,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   runtimeMode: initialRuntimeMode,
   setRuntimeMode: async mode => {
+    if (mode === 'advanced' && !CAN_USE_ADVANCED_RUNTIME) {
+      persistRuntimeMode('frontend');
+      const state = get();
+      const nextAIConfig = getFrontendAIConfig(state.serverAIConfig || DEFAULT_AI_CONFIG);
+      void persistAIConfigSnapshot(nextAIConfig).catch(storageError => {
+        console.warn('[Runtime Mode] Failed to persist browser snapshot:', storageError);
+      });
+      set({
+        runtimeMode: 'frontend',
+        aiConfig: nextAIConfig,
+        isAIConfigLoading: false,
+      });
+      return;
+    }
+
     persistRuntimeMode(mode);
 
     if (mode === 'frontend') {
