@@ -3,34 +3,24 @@
  */
 import { Router } from "express";
 
+import {
+  WORKFLOW_STAGE_LABELS,
+  WORKFLOW_STAGES,
+} from "../../shared/workflow-runtime.js";
 import { getAIConfig } from "../core/ai-config.js";
-import { V3_STAGES } from "../core/workflow-engine.js";
 import db from "../db/index.js";
 
 const router = Router();
-
-const STAGE_LABELS: Record<string, string> = {
-  direction: "方向下发",
-  planning: "任务规划",
-  execution: "执行",
-  review: "评审",
-  meta_audit: "元审计",
-  revision: "修订",
-  verify: "验证",
-  summary: "汇总",
-  feedback: "反馈",
-  evolution: "进化",
-};
 
 router.get("/ai", (_req, res) => {
   res.json({ config: getAIConfig(), source: ".env", writable: false });
 });
 
 router.get("/stages", (_req, res) => {
-  const stageInfo = V3_STAGES.map((stage, idx) => ({
+  const stageInfo = WORKFLOW_STAGES.map((stage, idx) => ({
     id: stage,
     order: idx + 1,
-    label: STAGE_LABELS[stage] || stage,
+    label: WORKFLOW_STAGE_LABELS[stage],
   }));
 
   res.json({ stages: stageInfo });
