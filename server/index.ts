@@ -13,6 +13,17 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+async function initializeAgentRuntime() {
+  const db = (await import('./db/index.js')).default;
+  const { ensureAgentWorkspaces } = await import('./memory/workspace.js');
+
+  const agentIds = db.getAgents().map((agent) => agent.id);
+  const workspaces = ensureAgentWorkspaces(agentIds);
+
+  console.log(`[Workspace] Ready. ${workspaces.length} agent workspaces materialized.`);
+  return { agentIds, workspaceCount: workspaces.length };
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -28,6 +39,11 @@ async function startServer() {
   // Seed database
   const { seedAgents } = await import("./db/seed.js");
   seedAgents();
+  await initializeAgentRuntime();
+
+  const db = (await import("./db/index.js")).default;
+  const { soulStore } = await import("./memory/soul-store.js");
+  soulStore.ensureAllSoulFiles();
 
   // Initialize agent registry
   const { registry } = await import("./core/registry.js");
@@ -36,7 +52,6 @@ async function startServer() {
   const { sessionStore } = await import("./memory/session-store.js");
 
   // Recover workflows that were left running across restarts.
-  const db = (await import("./db/index.js")).default;
   for (const workflow of db.getWorkflows()) {
     if (workflow.status === "running") {
       db.updateWorkflow(workflow.id, {
@@ -93,4 +108,5 @@ async function startServer() {
   });
 }
 
+export { initializeAgentRuntime, startServer };
 startServer().catch(console.error);
