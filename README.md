@@ -1,65 +1,94 @@
-# Cube Pets Office
+<p align="center">
+  <img src="./banner.png" alt="Cube Pets Office banner" width="100%" />
+</p>
 
-![Cube Pets Office banner](./banner.png)
+<h1 align="center">Cube Pets Office</h1>
 
-一个把“单条自然语言指令”编排成多智能体协作流程的 3D 可视化项目。
+<p align="center">
+  A 3D multi-agent orchestration playground where one directive becomes coordinated work across 18 agents.
+</p>
 
-项目目前已经从最初的展示型页面，演进成一个可运行的多智能体编排系统：
-- 前端用 3D 办公室场景展示 18 个智能体的实时状态
-- 后端支持 10 阶段 workflow、WebSocket 事件推送、Agent 记忆与评审闭环
-- AI 配置统一以 `.env` 为唯一真源，聊天面板和 workflow 使用同一套服务端配置
+<p align="center">
+  <img alt="status" src="https://img.shields.io/badge/status-active%20prototype-0ea5e9" />
+  <img alt="agents" src="https://img.shields.io/badge/agents-18-22c55e" />
+  <img alt="workflow" src="https://img.shields.io/badge/workflow-10%20stages-f97316" />
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-111827" />
+</p>
 
-## 当前状态
+## Overview
 
-当前仓库已经实现的核心能力：
-- 18 个智能体注册、分部门组织，并在 3D 场景中完整布局
-- 10 阶段工作流：`direction -> planning -> execution -> review -> meta_audit -> revision -> verify -> summary -> feedback -> evolution`
-- 实时消息流粒子动画、Agent 状态动画、Workflow 面板
-- Agent 短期记忆注入、历史摘要检索、`soul_md` 自动演化
-- 聊天面板与 workflow 统一走服务端 API
-- `.env` 统一驱动模型、Base URL、API Key、推理参数
+Cube Pets Office started as a visual demo and has grown into a working multi-agent system with:
 
-当前还没有完成，README 这里也明确保留：
-- 严格的文件系统隔离还未落地，当前更接近“约定式隔离”
-- 中期记忆不是向量检索，当前是摘要 + 关键词检索
-- `SOUL.md` 的长期记忆演化目前落在数据库 `soul_md` 字段，不是文件版自动更新
-- heartbeat / 自主搜索 / 定时报告机制尚未实现
+- a 3D office scene that renders all 18 agents
+- a 10-stage workflow pipeline
+- real-time WebSocket updates for agent status and message flow
+- per-agent memory, review, revision, verify, and evolution loops
+- a single `.env` driven AI configuration shared by chat and workflow execution
 
-## 技术栈
+The core idea is simple:
 
-- Frontend: React 19, Vite, TypeScript, Zustand, Three.js, React Three Fiber, Drei
+> one user directive -> CEO routing -> department planning -> worker execution -> review -> audit -> revision -> verify -> summary -> feedback -> evolution
+
+## What Works Today
+
+- 18 agents are seeded and loaded into the system
+- 18 visual agent slots are rendered in the 3D scene
+- workflow stages run end-to-end through:
+  `direction -> planning -> execution -> review -> meta_audit -> revision -> verify -> summary -> feedback -> evolution`
+- the frontend shows:
+  - directive view
+  - org view
+  - workflow progress view
+  - review view
+  - memory view
+  - history view
+- message flow particles and stage-linked agent animations are implemented
+- recent memory injection is implemented
+- historical workflow summaries are searchable
+- persona evolution is implemented through the `soul_md` field in storage
+- chat and workflow now read the same server-side AI config
+
+## What Is Not Done Yet
+
+This repository is open-sourced as an active prototype, not as a finished framework.
+
+- strict filesystem isolation is not enforced yet
+- mid-term memory is keyword-based, not vector retrieval
+- long-term memory evolves in stored `soul_md`, not file-based `SOUL.md`
+- heartbeat / scheduled autonomous reporting is not implemented yet
+- some historical docs still contain legacy notes and cleanup debt
+
+## Tech Stack
+
+- Frontend: React 19, Vite, TypeScript, Zustand
+- 3D: Three.js, React Three Fiber, Drei
 - Backend: Express, Socket.IO, TypeScript
-- AI: OpenAI-compatible API, `.env` driven config
-- Storage: local JSON database + agent workspace files
+- AI access: OpenAI-compatible APIs
+- Storage: local JSON database plus per-agent runtime workspace files
 
-## 主要界面
+## Project Structure
 
-- `3D Scene`: 18 个智能体、部门分区、消息流动线、状态气泡
-- `Workflow Panel`: 指令、组织、进度、评审、记忆、历史多视图
-- `Chat Panel`: 选中任意 Agent 后，以当前角色身份对话
+```text
+client/   frontend app, 3D scene, workflow panel, chat panel
+server/   API routes, workflow engine, agent registry, memory, sockets
+shared/   shared utilities and types
+data/     local runtime state and agent workspace artifacts
+scripts/  local development helpers
+```
 
-## 后端能力
+## Quick Start
 
-- `POST /api/workflows`: 启动一条新的多智能体工作流
-- `GET /api/workflows`: 查看历史工作流
-- `GET /api/workflows/:id`: 查看某条工作流的任务与消息
-- `GET /api/agents`: 查看全部 Agent
-- `GET /api/agents/:id/memory/recent`: 查看最近记忆
-- `GET /api/agents/:id/memory/search`: 搜索历史摘要
-- `GET /api/config/ai`: 查看当前 AI 配置来源与运行参数
-- `POST /api/chat`: 统一的服务端聊天代理接口
-
-## 本地启动
-
-### 1. 安装依赖
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2. 配置环境变量
+### 2. Create `.env`
 
-基于 `.env.example` 创建本地 `.env`，填入你自己的模型服务配置：
+Copy `.env.example` to `.env` and fill in your provider settings.
+
+Minimal example:
 
 ```dotenv
 PORT=3001
@@ -73,64 +102,61 @@ LLM_REASONING_EFFORT=high
 LLM_TIMEOUT_MS=45000
 ```
 
-前端开发服务器默认跑在 `3000`，并通过 Vite 代理把 `/api` 和 `/socket.io` 转发到 `3001`。
-
-### 3. 同时启动前后端
+### 3. Start frontend and backend together
 
 ```bash
 npm run dev:all
 ```
 
-默认访问：
+Default local URLs:
+
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:3001/api`
 
-也可以分别启动：
+You can also run them separately:
 
 ```bash
 npm run dev
 npm run dev:server
 ```
 
-### 4. 类型检查
+### 4. Type-check
 
 ```bash
 npm run check
 ```
 
-## 生产构建
+## Runtime Data
 
-```bash
-npm run build
-```
+The app writes local runtime artifacts under `data/`, including:
 
-构建后服务端入口位于 `dist/index.js`，静态资源位于 `dist/public/`。
-
-## 项目结构
-
-```text
-client/   React 前端、3D 场景、聊天面板、工作流面板
-server/   Express API、Workflow Engine、Agent Registry、Memory、Socket
-shared/   共享类型与工具
-data/     本地数据库与 Agent runtime 工作空间（运行时产物）
-scripts/  开发辅助脚本
-```
-
-## 运行时数据说明
-
-仓库运行后会在 `data/` 下生成本地状态：
 - `data/database.json`
 - `data/agents/*/sessions/`
 - `data/agents/*/memory/`
 - `data/agents/*/reports/`
 
-这些文件属于本地 runtime 数据，不属于源码的一部分。仓库已按公开仓库的方式忽略这些产物。
+These files are local runtime state, not source code. They are intentionally ignored for open-source publishing.
 
-## 开源说明
+## API Surface
+
+Main routes currently exposed by the server:
+
+- `POST /api/workflows` - start a workflow
+- `GET /api/workflows` - list workflows
+- `GET /api/workflows/:id` - fetch workflow details
+- `GET /api/agents` - list agents
+- `GET /api/agents/:id/memory/recent` - recent memory entries
+- `GET /api/agents/:id/memory/search` - search historical summaries
+- `GET /api/config/ai` - inspect current AI config source and values
+- `POST /api/chat` - unified server-side chat endpoint
+
+## Open Source Notes
 
 - License: MIT
-- 欢迎基于这个仓库继续扩展更严格的多智能体隔离、向量记忆、heartbeat、自进化闭环等能力
+- This repo is being shared in its current working state
+- The public version excludes local memory/session artifacts and local config snapshots
+- If you fork it, rotate your own API keys and keep `.env` local
 
 ## Roadmap
 
-更细的阶段规划和“当前代码已完成 / 未完成”的拆分，见 `ROADMAP.md`。
+See `ROADMAP.md` for the more detailed implementation roadmap and the current "done vs not done" breakdown.
