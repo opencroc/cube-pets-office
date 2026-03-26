@@ -4,7 +4,14 @@
  */
 
 const CDN_BASE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663463426375/NKkQA3NRgoJFshsk6jL45U';
-const localAsset = (path: string) => encodeURI(path);
+const localAsset = (path: string) => {
+  const normalizedBase =
+    import.meta.env.BASE_URL === '/'
+      ? '/'
+      : import.meta.env.BASE_URL.replace(/\/+$/, '/') ;
+  const normalizedPath = path.replace(/^\/+/, '');
+  return encodeURI(`${normalizedBase}${normalizedPath}`);
+};
 
 export const PET_MODELS = {
   bunny: localAsset('/kenney_cube-pets_1.0/Models/GLB format/animal-bunny.glb'),
