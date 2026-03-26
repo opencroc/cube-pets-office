@@ -3,6 +3,7 @@
  * Manages: PDF viewer, AI config, pet interactions, UI panels
  */
 import { create } from 'zustand';
+
 import { getAIConfigSnapshot, persistAIConfig } from './browser-runtime-storage';
 import {
   createBrowserAIConfig,
@@ -13,7 +14,10 @@ import {
   type AIConfig,
   type AIConfigMode,
 } from './ai-config';
+
 export type { AIConfig, AIConfigMode } from './ai-config';
+
+export type RuntimeMode = 'frontend' | 'advanced';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -30,6 +34,9 @@ interface AppState {
   togglePdf: () => void;
   openPdf: () => void;
   closePdf: () => void;
+
+  runtimeMode: RuntimeMode;
+  setRuntimeMode: (mode: RuntimeMode) => Promise<void>;
 
   serverAIConfig: AIConfig;
   aiConfig: AIConfig;
@@ -59,20 +66,99 @@ interface AppState {
 }
 
 const DEFAULT_AI_CONFIG = createDefaultAIConfig();
+const RUNTIME_MODE_STORAGE_KEY = 'cube-pets-office-runtime-mode';
+
+function createPreviewAIConfig(): AIConfig {
+  return createServerAIConfig({
+    baseUrl: 'browser-preview',
+    model: 'Local demo responses',
+    modelReasoningEffort: 'instant',
+    maxContext: 32000,
+    providerName: 'Built-in browser preview',
+    timeoutMs: 2000,
+    stream: false,
+  });
+}
+
+function persistAIConfigSnapshot(config: AIConfig) {
+  return persistAIConfig({ ...config });
+}
+
+function getInitialRuntimeMode(): RuntimeMode {
+  if (typeof window === 'undefined') return 'frontend';
+
+  const stored = window.localStorage.getItem(RUNTIME_MODE_STORAGE_KEY);
+  return stored === 'advanced' ? 'advanced' : 'frontend';
+}
+
+function persistRuntimeMode(mode: RuntimeMode) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(RUNTIME_MODE_STORAGE_KEY, mode);
+}
+
+function getFrontendAIConfig(serverConfig: AIConfig): AIConfig {
+  const persisted = loadPersistedAISettings(serverConfig);
+  return persisted.mode === 'browser_direct'
+    ? persisted.browserConfig
+    : createPreviewAIConfig();
+}
+
+const initialRuntimeMode = getInitialRuntimeMode();
 
 export const useAppStore = create<AppState>((set, get) => ({
   currentPage: 1,
   totalPages: 33,
   isPdfOpen: false,
-  setCurrentPage: (page) => set({ currentPage: Math.max(1, Math.min(page, 33)) }),
-  togglePdf: () => set((s) => ({ isPdfOpen: !s.isPdfOpen })),
+  setCurrentPage: page => set({ currentPage: Math.max(1, Math.min(page, 33)) }),
+  togglePdf: () => set(state => ({ isPdfOpen: !state.isPdfOpen })),
   openPdf: () => set({ isPdfOpen: true }),
   closePdf: () => set({ isPdfOpen: false }),
 
+  runtimeMode: initialRuntimeMode,
+  setRuntimeMode: async mode => {
+    persistRuntimeMode(mode);
+
+    if (mode === 'frontend') {
+      const state = get();
+      const nextAIConfig = getFrontendAIConfig(state.serverAIConfig || DEFAULT_AI_CONFIG);
+      void persistAIConfigSnapshot(nextAIConfig).catch(storageError => {
+        console.warn('[Runtime Mode] Failed to persist browser snapshot:', storageError);
+      });
+      set({
+        runtimeMode: mode,
+        aiConfig: nextAIConfig,
+        isAIConfigLoading: false,
+      });
+      return;
+    }
+
+    set({ runtimeMode: mode });
+    try {
+      await get().hydrateAIConfig();
+    } catch (error) {
+      console.error('[Runtime Mode] Failed to hydrate advanced config:', error);
+    }
+  },
+
   serverAIConfig: DEFAULT_AI_CONFIG,
-  aiConfig: DEFAULT_AI_CONFIG,
+  aiConfig:
+    initialRuntimeMode === 'frontend'
+      ? getFrontendAIConfig(DEFAULT_AI_CONFIG)
+      : DEFAULT_AI_CONFIG,
   isAIConfigLoading: false,
   hydrateAIConfig: async () => {
+    if (get().runtimeMode === 'frontend') {
+      const nextAIConfig = getFrontendAIConfig(get().serverAIConfig || DEFAULT_AI_CONFIG);
+      void persistAIConfigSnapshot(nextAIConfig).catch(storageError => {
+        console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
+      });
+      set({
+        aiConfig: nextAIConfig,
+        isAIConfigLoading: false,
+      });
+      return;
+    }
+
     set({ isAIConfigLoading: true });
 
     try {
@@ -88,9 +174,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         persisted.mode === 'browser_direct'
           ? persisted.browserConfig
           : serverAIConfig;
-      void persistAIConfig(aiConfig).catch((storageError) => {
+
+      void persistAIConfigSnapshot(aiConfig).catch(storageError => {
         console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
       });
+
       set({
         serverAIConfig,
         aiConfig,
@@ -111,6 +199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             cachedMode === 'browser_direct'
               ? createBrowserAIConfig(cachedConfig, cachedServerAIConfig)
               : cachedServerAIConfig;
+
           set({
             serverAIConfig: cachedServerAIConfig,
             aiConfig,
@@ -121,6 +210,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (storageError) {
         console.warn('[AI Config] Failed to load browser snapshot:', storageError);
       }
+
       const fallbackServerAIConfig = get().serverAIConfig || DEFAULT_AI_CONFIG;
       const persisted = loadPersistedAISettings(fallbackServerAIConfig);
       const aiConfig =
@@ -136,7 +226,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw error;
     }
   },
-  updateBrowserAIConfig: (patch) => {
+  updateBrowserAIConfig: patch => {
     const state = get();
     const nextConfig = createBrowserAIConfig(
       {
@@ -147,18 +237,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
 
     savePersistedAISettings('browser_direct', nextConfig);
-    void persistAIConfig(nextConfig).catch((storageError) => {
+    void persistAIConfigSnapshot(nextConfig).catch(storageError => {
       console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
     });
     set({ aiConfig: nextConfig });
   },
-  setAIConfigMode: (mode) => {
+  setAIConfigMode: mode => {
     const state = get();
 
     if (mode === 'browser_direct') {
       const nextConfig = createBrowserAIConfig(state.aiConfig, state.serverAIConfig);
       savePersistedAISettings('browser_direct', nextConfig);
-      void persistAIConfig(nextConfig).catch((storageError) => {
+      void persistAIConfigSnapshot(nextConfig).catch(storageError => {
         console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
       });
       set({ aiConfig: nextConfig });
@@ -166,36 +256,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     savePersistedAISettings('server_proxy', state.aiConfig);
-    void persistAIConfig(state.serverAIConfig).catch((storageError) => {
+    const nextConfig =
+      state.runtimeMode === 'frontend' ? createPreviewAIConfig() : state.serverAIConfig;
+    void persistAIConfigSnapshot(nextConfig).catch(storageError => {
       console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
     });
-    set({ aiConfig: state.serverAIConfig });
+    set({ aiConfig: nextConfig });
   },
   resetBrowserAIConfig: () => {
     const state = get();
     const nextConfig = createBrowserAIConfig({}, state.serverAIConfig);
     savePersistedAISettings('browser_direct', nextConfig);
-    void persistAIConfig(nextConfig).catch((storageError) => {
+    void persistAIConfigSnapshot(nextConfig).catch(storageError => {
       console.warn('[AI Config] Failed to persist browser snapshot:', storageError);
     });
     set({ aiConfig: nextConfig });
   },
   isConfigOpen: false,
-  toggleConfig: () => set((s) => ({ isConfigOpen: !s.isConfigOpen })),
+  toggleConfig: () => set(state => ({ isConfigOpen: !state.isConfigOpen })),
 
   chatMessages: [],
   isChatOpen: false,
   isLoading: false,
-  addMessage: (msg) => set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
+  addMessage: msg => set(state => ({ chatMessages: [...state.chatMessages, msg] })),
   clearChat: () => set({ chatMessages: [] }),
-  toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
-  setLoading: (loading) => set({ isLoading: loading }),
+  toggleChat: () => set(state => ({ isChatOpen: !state.isChatOpen })),
+  setLoading: loading => set({ isLoading: loading }),
 
   selectedPet: null,
-  setSelectedPet: (pet) => set({ selectedPet: pet }),
+  setSelectedPet: pet => set({ selectedPet: pet }),
 
   isSceneReady: false,
-  setSceneReady: (ready) => set({ isSceneReady: ready }),
+  setSceneReady: ready => set({ isSceneReady: ready }),
   loadingProgress: 0,
-  setLoadingProgress: (progress) => set({ loadingProgress: progress }),
+  setLoadingProgress: progress => set({ loadingProgress: progress }),
 }));

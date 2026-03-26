@@ -1,8 +1,10 @@
 /**
- * UI state for the browser runtime workflow experience.
- * Zustand only mirrors runtime state; orchestration lives in the worker.
+ * UI state for both browser runtime mode and advanced server mode.
  */
 import { create } from "zustand";
+import { io, Socket } from "socket.io-client";
+
+import { useAppStore } from "@/lib/store";
 import {
   getAgentsSnapshot,
   getHeartbeatReportsSnapshot,
@@ -19,7 +21,6 @@ import {
   persistWorkflowDetail,
   persistWorkflows,
 } from "./browser-runtime-storage";
-
 import { runtimeEventBus } from "./runtime/local-event-bus";
 import { localRuntime } from "./runtime/local-runtime-client";
 import type {
@@ -69,6 +70,10 @@ const FALLBACK_STAGES: StageInfo[] = [
   { id: "evolution", order: 10, label: "进化" },
 ];
 
+function isAdvancedMode() {
+  return useAppStore.getState().runtimeMode === "advanced";
+}
+
 function mergeHeartbeatStatus(
   items: HeartbeatStatusInfo[],
   next: HeartbeatStatusInfo
@@ -93,8 +98,7 @@ function isTerminalWorkflowStatus(status: WorkflowInfo["status"]): boolean {
   );
 }
 
-function saveDownload(filename: string, mimeType: string, content: string) {
-  const blob = new Blob([content], { type: mimeType });
+function saveBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -105,10 +109,35 @@ function saveDownload(filename: string, mimeType: string, content: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function saveDownload(filename: string, mimeType: string, content: string) {
+  saveBlob(filename, new Blob([content], { type: mimeType }));
+}
+
+function getDownloadFilename(
+  response: Response,
+  fallbackFilename: string
+): string {
+  const disposition = response.headers.get("content-disposition");
+  const match = disposition?.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallbackFilename;
+}
+
+async function downloadFromUrl(url: string, fallbackFilename: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `API ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  saveBlob(getDownloadFilename(response, fallbackFilename), blob);
+}
+
 let runtimeUnsubscribe: (() => void) | null = null;
 let runtimeInitPromise: Promise<void> | null = null;
 
 interface WorkflowState {
+  socket: Socket | null;
   connected: boolean;
   agents: AgentInfo[];
   agentStatuses: Record<string, string>;
@@ -331,6 +360,7 @@ function handleRuntimeEvent(
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
+  socket: null,
   connected: false,
   agents: [],
   agentStatuses: {},
@@ -343,7 +373,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   agentMemorySearchResults: [],
   heartbeatStatuses: [],
   heartbeatReports: [],
-  stages: [],
+  stages: FALLBACK_STAGES,
   isWorkflowPanelOpen: false,
   activeView: "directive",
   isSubmitting: false,
@@ -357,6 +387,45 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   eventLog: [],
 
   initSocket: async () => {
+    if (isAdvancedMode()) {
+      if (runtimeUnsubscribe) {
+        runtimeUnsubscribe();
+        runtimeUnsubscribe = null;
+      }
+      runtimeInitPromise = null;
+
+      const existingSocket = get().socket;
+      if (existingSocket?.connected) return;
+      if (existingSocket) {
+        existingSocket.disconnect();
+      }
+
+      const socket = io(window.location.origin, {
+        transports: ["websocket", "polling"],
+      });
+
+      socket.on("connect", () => {
+        set({ connected: true });
+      });
+
+      socket.on("disconnect", () => {
+        set({ connected: false });
+      });
+
+      socket.on("agent_event", (event: RuntimeEvent) => {
+        handleRuntimeEvent(event, set, get);
+      });
+
+      set({ socket, connected: socket.connected });
+      return;
+    }
+
+    const existingSocket = get().socket;
+    if (existingSocket) {
+      existingSocket.disconnect();
+      set({ socket: null, connected: false });
+    }
+
     if (runtimeInitPromise) {
       await runtimeInitPromise;
       return;
@@ -373,13 +442,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
       const snapshot = await localRuntime.getSnapshot();
       set({
+        socket: null,
         connected: true,
         agents: snapshot.agents,
         agentStatuses: snapshot.agentStatuses,
         workflows: snapshot.workflows,
         heartbeatStatuses: snapshot.heartbeatStatuses,
         heartbeatReports: snapshot.heartbeatReports,
-        stages: snapshot.stages,
+        stages: snapshot.stages?.length ? snapshot.stages : FALLBACK_STAGES,
       });
     })();
 
@@ -393,16 +463,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   disconnectSocket: () => {
+    const socket = get().socket;
+    if (socket) {
+      socket.disconnect();
+    }
     if (runtimeUnsubscribe) {
       runtimeUnsubscribe();
       runtimeUnsubscribe = null;
     }
     runtimeInitPromise = null;
-    set({ connected: false });
+    set({ socket: null, connected: false });
   },
 
   fetchAgents: async () => {
     try {
+      if (isAdvancedMode()) {
+        const response = await fetch("/api/agents");
+        const data = await response.json();
+        const agents = (data.agents || []).map((agent: any) => ({
+          ...agent,
+          isActive: agent.isActive ?? true,
+          status: (get().agentStatuses[agent.id] || "idle") as AgentInfo["status"],
+        }));
+        void persistAgents(agents).catch(storageError => {
+          console.warn("[Store] Failed to persist agents snapshot:", storageError);
+        });
+        set({ agents });
+        return;
+      }
+
       const data = await localRuntime.getAgents();
       const agents = data.agents.map(agent => ({
         ...agent,
@@ -412,9 +501,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       void persistAgents(agents).catch(storageError => {
         console.warn("[Store] Failed to persist agents snapshot:", storageError);
       });
-      set({
-        agents,
-      });
+      set({ agents });
     } catch (err) {
       console.error("[Store] Failed to fetch agents:", err);
       try {
@@ -436,8 +523,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   fetchStages: async () => {
     try {
+      if (isAdvancedMode()) {
+        const response = await fetch("/api/config/stages");
+        const data = await response.json();
+        set({ stages: data.stages || FALLBACK_STAGES });
+        return;
+      }
+
       const data = await localRuntime.getStages();
-      set({ stages: data.stages || [] });
+      set({ stages: data.stages || FALLBACK_STAGES });
     } catch (err) {
       console.error("[Store] Failed to fetch stages:", err);
       set({ stages: FALLBACK_STAGES });
@@ -446,7 +540,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   fetchWorkflows: async () => {
     try {
-      const data = await localRuntime.listWorkflows();
+      const data = isAdvancedMode()
+        ? await fetch("/api/workflows").then(res => res.json())
+        : await localRuntime.listWorkflows();
       void persistWorkflows(data.workflows || []).catch(storageError => {
         console.warn(
           "[Store] Failed to persist workflow list snapshot:",
@@ -469,13 +565,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   fetchWorkflowDetail: async (id: string) => {
     try {
-      const data = await localRuntime.getWorkflowDetail(id);
+      const data = isAdvancedMode()
+        ? await fetch(`/api/workflows/${id}`).then(res => res.json())
+        : await localRuntime.getWorkflowDetail(id);
       void persistWorkflowDetail({
         id,
         workflow: data.workflow,
         tasks: data.tasks || [],
         messages: data.messages || [],
-        report: null,
+        report: data.report || null,
       }).catch(storageError => {
         console.warn(
           "[Store] Failed to persist workflow detail snapshot:",
@@ -515,11 +613,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ isMemoryLoading: true });
 
     try {
-      const data = await localRuntime.getAgentRecentMemory(
-        agentId,
-        workflowId,
-        limit
-      );
+      const data = isAdvancedMode()
+        ? await (async () => {
+            const params = new URLSearchParams();
+            params.set("limit", String(limit));
+            if (workflowId) {
+              params.set("workflowId", workflowId);
+            }
+            return fetch(
+              `/api/agents/${agentId}/memory/recent?${params.toString()}`
+            ).then(res => res.json());
+          })()
+        : await localRuntime.getAgentRecentMemory(agentId, workflowId, limit);
       void persistRecentMemory(agentId, workflowId || null, data.entries || []).catch(
         storageError => {
           console.warn("[Store] Failed to persist recent memory snapshot:", storageError);
@@ -553,7 +658,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ isMemoryLoading: true, memoryQuery: query });
 
     try {
-      const data = await localRuntime.searchAgentMemory(agentId, query, topK);
+      const data = isAdvancedMode()
+        ? await (async () => {
+            const params = new URLSearchParams();
+            params.set("query", query);
+            params.set("topK", String(topK));
+            return fetch(
+              `/api/agents/${agentId}/memory/search?${params.toString()}`
+            ).then(res => res.json());
+          })()
+        : await localRuntime.searchAgentMemory(agentId, query, topK);
       void persistMemorySearch(agentId, query, data.memories || []).catch(
         storageError => {
           console.warn("[Store] Failed to persist memory search snapshot:", storageError);
@@ -580,7 +694,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   fetchHeartbeatStatuses: async () => {
     try {
-      const data = await localRuntime.getHeartbeatStatuses();
+      const data = isAdvancedMode()
+        ? await fetch("/api/reports/heartbeat/status").then(res => res.json())
+        : await localRuntime.getHeartbeatStatuses();
       void persistHeartbeatStatuses(data.statuses || []).catch(storageError => {
         console.warn(
           "[Store] Failed to persist heartbeat status snapshot:",
@@ -606,7 +722,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ isHeartbeatLoading: true });
 
     try {
-      const data = await localRuntime.getHeartbeatReports(agentId, limit);
+      const data = isAdvancedMode()
+        ? await (async () => {
+            const params = new URLSearchParams();
+            params.set("limit", String(limit));
+            if (agentId) {
+              params.set("agentId", agentId);
+            }
+            return fetch(`/api/reports/heartbeat?${params.toString()}`).then(res =>
+              res.json()
+            );
+          })()
+        : await localRuntime.getHeartbeatReports(agentId, limit);
       void persistHeartbeatReports(
         (data.reports || []).map((report: any) => ({
           agentId: report.agentId,
@@ -629,7 +756,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       try {
         const reports = await getHeartbeatReportsSnapshot(agentId || null);
         set({
-          heartbeatReports: reports.map((item) => item.summary),
+          heartbeatReports: reports.map(item => item.summary),
           isHeartbeatLoading: false,
         });
       } catch (storageError) {
@@ -644,7 +771,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ runningHeartbeatAgentId: agentId });
 
     try {
-      await localRuntime.runHeartbeat(agentId);
+      if (isAdvancedMode()) {
+        const response = await fetch(`/api/reports/heartbeat/${agentId}/run`, {
+          method: "POST",
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Heartbeat run failed");
+        }
+      } else {
+        await localRuntime.runHeartbeat(agentId);
+      }
+
       await get().fetchHeartbeatStatuses();
       await get().fetchHeartbeatReports(undefined, 12);
       set({ runningHeartbeatAgentId: null });
@@ -699,7 +837,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     });
 
     try {
-      const data = await localRuntime.submitDirective(normalizedDirective);
+      const data = isAdvancedMode()
+        ? await (async () => {
+            const response = await fetch("/api/workflows", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ directive: normalizedDirective }),
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              throw new Error(payload.error || "Workflow start failed");
+            }
+            return payload;
+          })()
+        : await localRuntime.submitDirective(normalizedDirective);
 
       if (data.workflowId) {
         set({
@@ -724,11 +875,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   downloadWorkflowReport: async (workflowId, format) => {
+    if (isAdvancedMode()) {
+      await downloadFromUrl(
+        `/api/workflows/${workflowId}/report/download?format=${format}`,
+        `workflow-report.${format}`
+      );
+      return;
+    }
+
     const payload = await localRuntime.downloadWorkflowReport(workflowId, format);
     saveDownload(payload.filename, payload.mimeType, payload.content);
   },
 
   downloadDepartmentReport: async (workflowId, managerId, format) => {
+    if (isAdvancedMode()) {
+      await downloadFromUrl(
+        `/api/workflows/${workflowId}/report/department/${managerId}/download?format=${format}`,
+        `department-report.${format}`
+      );
+      return;
+    }
+
     const payload = await localRuntime.downloadWorkflowReport(
       workflowId,
       format,
@@ -738,6 +905,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   downloadHeartbeatReport: async (agentId, reportId, format) => {
+    if (isAdvancedMode()) {
+      await downloadFromUrl(
+        `/api/reports/heartbeat/${agentId}/${reportId}/download?format=${format}`,
+        `heartbeat-report.${format}`
+      );
+      return;
+    }
+
     const payload = await localRuntime.downloadHeartbeatReport(
       agentId,
       reportId,

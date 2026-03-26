@@ -1,6 +1,5 @@
 /**
- * Config Panel - AI model configuration
- * Supports server proxy mode and browser-direct mode.
+ * Config Panel - runtime mode, AI source, and browser runtime controls
  */
 import {
   AlertTriangle,
@@ -11,6 +10,7 @@ import {
   EyeOff,
   Globe,
   Key,
+  Monitor,
   RefreshCw,
   RotateCcw,
   Server,
@@ -37,8 +37,16 @@ import type { AIConfig } from '@/lib/store';
 import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
 
+function getSourceLabel(isFrontendMode: boolean, isBrowserMode: boolean) {
+  if (isFrontendMode && !isBrowserMode) return 'Built-in browser preview';
+  if (isBrowserMode) return 'Local browser storage';
+  return 'Server-side .env';
+}
+
 export function ConfigPanel() {
   const {
+    runtimeMode,
+    setRuntimeMode,
     aiConfig,
     serverAIConfig,
     hydrateAIConfig,
@@ -55,12 +63,16 @@ export function ConfigPanel() {
     fetchHeartbeatStatuses,
     fetchHeartbeatReports,
   } = useWorkflowStore();
+
   const [showKey, setShowKey] = useState(false);
   const [runtimeMeta, setRuntimeMeta] = useState<BrowserRuntimeMetadata | null>(null);
   const [isRuntimeSyncing, setIsRuntimeSyncing] = useState(false);
   const [isRuntimeExporting, setIsRuntimeExporting] = useState(false);
   const [isRuntimeImporting, setIsRuntimeImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const isFrontendMode = runtimeMode === 'frontend';
+  const isBrowserMode = aiConfig.mode === 'browser_direct';
 
   const refreshRuntimeMeta = async () => {
     try {
@@ -70,12 +82,10 @@ export function ConfigPanel() {
     }
   };
 
-  const isBrowserMode = aiConfig.mode === 'browser_direct';
-
   useEffect(() => {
     if (!isConfigOpen) return;
 
-    hydrateAIConfig().catch((error) => {
+    hydrateAIConfig().catch(error => {
       console.error('[ConfigPanel] Failed to refresh AI config:', error);
     });
     void refreshRuntimeMeta();
@@ -85,16 +95,17 @@ export function ConfigPanel() {
 
   const inputClass = `w-full px-3.5 py-2.5 text-sm bg-[#FFFCF8] border border-[#E8DDD0] rounded-xl
     text-[#3A2A1A] placeholder-[#C4B5A0] transition-all disabled:opacity-70 disabled:bg-[#F7F1EA]`;
-
-  const labelClass = 'flex items-center gap-2 text-xs font-semibold text-[#5A4A3A] mb-1.5';
+  const labelClass = 'mb-1.5 flex items-center gap-2 text-xs font-semibold text-[#5A4A3A]';
 
   const handleRefresh = async () => {
     try {
       await hydrateAIConfig();
-      toast.success('Server config reloaded', {
-        description: isBrowserMode
-          ? 'Server defaults were refreshed. Your local browser config was kept.'
-          : 'Values were refreshed from .env on the server.',
+      toast.success('Config reloaded', {
+        description: isFrontendMode
+          ? 'Frontend mode refreshed local preview and browser-side AI settings.'
+          : isBrowserMode
+            ? 'Server defaults were refreshed. Your browser-side AI config was kept.'
+            : 'Values were refreshed from .env on the server.',
       });
     } catch (error: any) {
       toast.error('Failed to reload config', {
@@ -108,15 +119,25 @@ export function ConfigPanel() {
     updateBrowserAIConfig(patch);
   };
 
-  const switchMode = (mode: AIConfig['mode']) => {
+  const handleRuntimeModeChange = async (mode: 'frontend' | 'advanced') => {
+    await setRuntimeMode(mode);
+    toast.success(mode === 'frontend' ? 'Frontend Mode enabled' : 'Advanced Mode enabled', {
+      description:
+        mode === 'frontend'
+          ? 'Workflow uses the browser runtime and chat can stay local.'
+          : 'Workflow uses the existing server runtime and reports pipeline.',
+    });
+  };
+
+  const handleAISourceChange = (mode: AIConfig['mode']) => {
     setAIConfigMode(mode);
     toast.success(
       mode === 'browser_direct' ? 'Browser Direct enabled' : 'Server Proxy enabled',
       {
         description:
           mode === 'browser_direct'
-            ? 'API settings now live in this browser for local use.'
-            : 'Chat requests now use the server-side .env config again.',
+            ? 'Model calls can run from this browser when your provider supports it.'
+            : 'Chat will use the server-side .env configuration again.',
       }
     );
   };
@@ -205,7 +226,7 @@ export function ConfigPanel() {
 
   return (
     <div
-      className="fixed top-0 left-0 h-full w-[380px] z-[55] flex flex-col
+      className="fixed top-0 left-0 h-full w-[390px] z-[55] flex flex-col
         bg-white/90 backdrop-blur-2xl border-r border-white/60
         shadow-[12px_0_40px_rgba(0,0,0,0.1)]
         animate-in slide-in-from-left duration-300"
@@ -217,9 +238,9 @@ export function ConfigPanel() {
             <Settings className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-[#3A2A1A]">AI Config</h3>
+            <h3 className="text-sm font-bold text-[#3A2A1A]">Runtime & AI</h3>
             <p className="text-[10px] text-[#8B7355]">
-              {isBrowserMode ? 'Browser Direct mode' : 'Server Proxy mode'}
+              {isFrontendMode ? 'Frontend workflow runtime' : 'Advanced server runtime'}
             </p>
           </div>
         </div>
@@ -232,9 +253,45 @@ export function ConfigPanel() {
       </div>
 
       <div className="px-5 pt-4 space-y-3">
+        <div className="rounded-2xl border border-[#E8DDD0] bg-white/80 p-3.5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-[#3A2A1A]">Run Mode</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-[#8B7355]">
+                Frontend Mode keeps workflow execution inside the browser. Advanced Mode uses
+                the existing server runtime, reports, and sockets.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => void handleRuntimeModeChange('frontend')}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  isFrontendMode
+                    ? 'bg-[#2D5F4A] text-white'
+                    : 'bg-[#F7F1EA] text-[#5A4A3A] hover:bg-[#F0E8E0]'
+                }`}
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                Frontend
+              </button>
+              <button
+                onClick={() => void handleRuntimeModeChange('advanced')}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  isFrontendMode
+                    ? 'bg-[#F7F1EA] text-[#5A4A3A] hover:bg-[#F0E8E0]'
+                    : 'bg-[#D4845A] text-white'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                Advanced
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#F7F1EA] p-1.5 border border-[#E8DDD0]">
           <button
-            onClick={() => switchMode('server_proxy')}
+            onClick={() => handleAISourceChange('server_proxy')}
             className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
               !isBrowserMode
                 ? 'bg-white text-[#2D5F4A] shadow-sm'
@@ -245,7 +302,7 @@ export function ConfigPanel() {
             Server Proxy
           </button>
           <button
-            onClick={() => switchMode('browser_direct')}
+            onClick={() => handleAISourceChange('browser_direct')}
             className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
               isBrowserMode
                 ? 'bg-white text-[#2D5F4A] shadow-sm'
@@ -265,12 +322,16 @@ export function ConfigPanel() {
             <span className="text-xs font-bold text-[#3A2A1A]">Current Source</span>
           </div>
           <p className="text-sm font-semibold text-[#2D5F4A]">
-            {isBrowserMode ? 'Local browser storage' : '`.env` on the server'}
+            {getSourceLabel(isFrontendMode, isBrowserMode)}
           </p>
           <p className="text-[10px] text-[#8B7355] mt-0.5">
-            {isBrowserMode
-              ? 'Chat uses your browser-side API settings directly or through the optional proxy URL.'
-              : 'Chat and workflow both use the same server-side config from `.env`.'}
+            {isFrontendMode
+              ? isBrowserMode
+                ? 'Workflow stays in the browser runtime and chat uses browser-side AI settings.'
+                : 'Workflow stays in the browser runtime and chat uses the built-in local preview.'
+              : isBrowserMode
+                ? 'Advanced workflow stays server-backed while chat can call the model directly from this browser.'
+                : 'Workflow and chat both use the shared server-side .env config.'}
           </p>
         </div>
 
@@ -278,12 +339,11 @@ export function ConfigPanel() {
           <div className="rounded-xl border border-[#E8C27A] bg-[#FFF7E5] px-3.5 py-3">
             <div className="flex items-center gap-2 text-[#8A5A18]">
               <ShieldAlert className="w-4 h-4" />
-              <span className="text-xs font-bold">Local-use warning</span>
+              <span className="text-xs font-bold">Browser Direct notice</span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-[#7A5B2B]">
-              Browser Direct is only suitable for local use. Your API key is stored in this
-              browser and may be exposed to the local environment. If your provider blocks
-              browser CORS, fill the optional proxy URL below.
+              Your API key is stored in this browser. If the provider blocks browser CORS,
+              fill the optional proxy URL below or switch back to Server Proxy.
             </p>
           </div>
         )}
@@ -295,7 +355,8 @@ export function ConfigPanel() {
           <span className="text-xs font-bold text-[#3A2A1A]">Browser Runtime</span>
         </div>
         <p className="text-[10px] text-[#5A6A5E]">
-          Mirror `database.json`, sessions, memory, reports, `SOUL`, and heartbeat snapshots into IndexedDB for offline viewing and export.
+          Mirror workflow snapshots, memory, heartbeat reports, and AI config into IndexedDB for
+          offline viewing, import, and export.
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-[#5A6A5E]">
           <div className="rounded-lg bg-white/60 px-2.5 py-2">
@@ -340,7 +401,7 @@ export function ConfigPanel() {
           type="file"
           accept="application/json"
           className="hidden"
-          onChange={(event) => void handleImportRuntime(event)}
+          onChange={event => void handleImportRuntime(event)}
         />
       </div>
 
@@ -355,7 +416,7 @@ export function ConfigPanel() {
               type={showKey ? 'text' : 'password'}
               value={aiConfig.apiKey}
               readOnly={!isBrowserMode}
-              onChange={(event) => updateField({ apiKey: event.target.value })}
+              onChange={event => updateField({ apiKey: event.target.value })}
               placeholder={isBrowserMode ? 'sk-...' : ''}
               className={`${inputClass} pr-10 font-mono text-xs`}
             />
@@ -379,15 +440,10 @@ export function ConfigPanel() {
             type="text"
             value={aiConfig.baseUrl}
             readOnly={!isBrowserMode}
-            onChange={(event) => updateField({ baseUrl: event.target.value })}
+            onChange={event => updateField({ baseUrl: event.target.value })}
             placeholder={isBrowserMode ? 'https://api.openai.com/v1' : ''}
             className={`${inputClass} font-mono text-xs`}
           />
-          {isBrowserMode && (
-            <p className="mt-1 text-[10px] text-[#8B7355]">
-              Use a browser-reachable OpenAI-compatible endpoint with CORS enabled.
-            </p>
-          )}
         </div>
 
         {isBrowserMode && (
@@ -399,13 +455,12 @@ export function ConfigPanel() {
             <input
               type="text"
               value={aiConfig.proxyUrl}
-              onChange={(event) => updateField({ proxyUrl: event.target.value })}
+              onChange={event => updateField({ proxyUrl: event.target.value })}
               placeholder="http://localhost:8787/v1"
               className={`${inputClass} font-mono text-xs`}
             />
             <p className="mt-1 text-[10px] text-[#8B7355]">
-              If the provider cannot be called from the browser directly, the chat panel will
-              use this proxy URL instead of Base URL.
+              If the provider cannot be called from the browser directly, chat can use this proxy.
             </p>
           </div>
         )}
@@ -419,7 +474,7 @@ export function ConfigPanel() {
             type="text"
             value={aiConfig.model}
             readOnly={!isBrowserMode}
-            onChange={(event) => updateField({ model: event.target.value })}
+            onChange={event => updateField({ model: event.target.value })}
             className={inputClass}
           />
         </div>
@@ -432,7 +487,7 @@ export function ConfigPanel() {
           <select
             value={aiConfig.wireApi}
             disabled={!isBrowserMode}
-            onChange={(event) => updateField({ wireApi: event.target.value as AIConfig['wireApi'] })}
+            onChange={event => updateField({ wireApi: event.target.value as AIConfig['wireApi'] })}
             className={inputClass}
           >
             <option value="chat_completions">chat_completions</option>
@@ -449,7 +504,7 @@ export function ConfigPanel() {
             type="text"
             value={aiConfig.modelReasoningEffort}
             readOnly={!isBrowserMode}
-            onChange={(event) => updateField({ modelReasoningEffort: event.target.value })}
+            onChange={event => updateField({ modelReasoningEffort: event.target.value })}
             className={inputClass}
           />
         </div>
@@ -463,7 +518,7 @@ export function ConfigPanel() {
             type="number"
             value={aiConfig.timeoutMs}
             readOnly={!isBrowserMode}
-            onChange={(event) => updateField({ timeoutMs: Number(event.target.value) || 45000 })}
+            onChange={event => updateField({ timeoutMs: Number(event.target.value) || 45000 })}
             className={`${inputClass} font-mono`}
           />
         </div>
@@ -477,7 +532,7 @@ export function ConfigPanel() {
             type="number"
             value={aiConfig.maxContext}
             readOnly={!isBrowserMode}
-            onChange={(event) => updateField({ maxContext: Number(event.target.value) || 1000000 })}
+            onChange={event => updateField({ maxContext: Number(event.target.value) || 1000000 })}
             className={`${inputClass} font-mono`}
           />
         </div>
@@ -487,23 +542,21 @@ export function ConfigPanel() {
             <Tag className="w-3.5 h-3.5 text-[#C4956A]" />
             Provider Name
           </label>
-          <input
-            type="text"
-            value={aiConfig.providerName}
-            readOnly
-            className={inputClass}
-          />
+          <input type="text" value={aiConfig.providerName} readOnly className={inputClass} />
         </div>
 
         {!isBrowserMode && (
           <div className="rounded-xl border border-[#D7C9B8] bg-[#F8F3EC] px-3.5 py-3">
             <div className="flex items-center gap-2 text-[#6F5B46]">
               <AlertTriangle className="w-4 h-4" />
-              <span className="text-xs font-bold">Server-owned config</span>
+              <span className="text-xs font-bold">
+                {isFrontendMode ? 'Preview-only chat' : 'Server-owned config'}
+              </span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-[#8B7355]">
-              This mode stays read-only in the UI. To change the shared workflow/chat model,
-              edit `.env` and restart the server.
+              {isFrontendMode
+                ? 'Frontend Mode can use the built-in local preview without any backend setup. Switch to Browser Direct if you want real model calls from this browser.'
+                : 'This mode stays read-only in the UI. To change the shared workflow/chat model, edit .env and restart the server.'}
             </p>
           </div>
         )}
@@ -515,11 +568,11 @@ export function ConfigPanel() {
               <span className="text-xs font-bold">Current scope</span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-[#8B7355]">
-              Browser Direct is wired into the chat panel now. The long-running workflow engine
-              still runs on the server until the browser runtime phases are completed.
+              Browser Direct affects chat immediately in both runtime modes. In Frontend Mode it
+              pairs with the browser runtime; in Advanced Mode the workflow still runs on the server.
             </p>
             <p className="mt-2 text-[10px] text-[#8B7355]">
-              Server default: {serverAIConfig.model} · {serverAIConfig.providerName}
+              Server default: {serverAIConfig.model} / {serverAIConfig.providerName}
             </p>
           </div>
         )}
@@ -536,7 +589,7 @@ export function ConfigPanel() {
             disabled:cursor-not-allowed disabled:opacity-60"
         >
           <RefreshCw className={`w-4 h-4 ${isAIConfigLoading ? 'animate-spin' : ''}`} />
-          {isAIConfigLoading ? 'Reloading...' : 'Reload Server'}
+          {isAIConfigLoading ? 'Reloading...' : 'Reload Config'}
         </button>
 
         {isBrowserMode && (

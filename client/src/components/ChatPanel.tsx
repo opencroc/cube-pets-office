@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageCircle, Send, Trash2, X } from 'lucide-react';
+import { MessageCircle, Monitor, Send, Server, Trash2, X } from 'lucide-react';
 
 import {
   DEFAULT_AGENT_ID,
@@ -7,8 +7,8 @@ import {
   getAgentEmoji,
   getAgentLabel,
 } from '@/lib/agent-config';
-import { useAppStore, type ChatMessage } from '@/lib/store';
 import { callBrowserLLM } from '@/lib/browser-llm';
+import { useAppStore, type ChatMessage } from '@/lib/store';
 
 const PAPER_CONTEXT = `You are a cute cube-pet research assistant working in a warm study.
 
@@ -22,6 +22,42 @@ Core ideas:
 
 Reply naturally, stay concise, and keep a bit of character.`;
 
+function buildFrontendModeReply({
+  input,
+  agentName,
+  agentEmoji,
+  agentRole,
+}: {
+  input: string;
+  agentName: string;
+  agentEmoji: string;
+  agentRole: string;
+}) {
+  const normalized = input.toLowerCase();
+
+  if (/workflow|阶段|phase|流程|编排/.test(normalized)) {
+    return `${agentEmoji} ${agentName}：现在是纯前端模式，我先用本地演示带你过一遍主链路。系统会按 CEO -> Manager -> Worker 展开，再经过 review、meta-audit、revision、verify、summary、feedback 和 evolution。想跑真实服务端工作流的话，切到“高级模式”就可以。`;
+  }
+
+  if (/memory|记忆|soul|heartbeat|报告/.test(normalized)) {
+    return `${agentEmoji} ${agentName}：当前前端模式会优先保留浏览器内体验，所以我可以解释 memory、SOUL、heartbeat 和报告结构，但默认不会直接依赖服务端。如果你想查看真实报告和历史记录，可以切到“高级模式”。`;
+  }
+
+  if (/怎么用|如何|help|模式|mode/.test(normalized)) {
+    return `${agentEmoji} ${agentName}：你可以先用纯前端模式浏览 3D 场景、查看组织结构、体验本地聊天；准备好后再切到高级模式，走真实服务端工作流。如果你已经在浏览器里配好了 API，也可以继续留在前端模式做本地直连聊天。`;
+  }
+
+  return `${agentEmoji} ${agentName}：我现在在纯前端模式里值班，角色定位是“${agentRole}”。我可以先帮你理解论文思路、组织结构和界面分工；如果你想让我真正调用服务端链路，切到“高级模式”就可以。`;
+}
+
+function getModeLabel(runtimeMode: 'frontend' | 'advanced', browserDirect: boolean) {
+  if (runtimeMode === 'frontend') {
+    return browserDirect ? 'Frontend + Browser AI' : 'Frontend Preview';
+  }
+
+  return browserDirect ? 'Browser Direct' : 'Server Proxy';
+}
+
 export function ChatPanel() {
   const {
     chatMessages,
@@ -33,6 +69,7 @@ export function ChatPanel() {
     setLoading,
     aiConfig,
     selectedPet,
+    runtimeMode,
   } = useAppStore();
 
   const [input, setInput] = useState('');
@@ -43,6 +80,8 @@ export function ChatPanel() {
   const agentName = getAgentLabel(agentId);
   const agentEmoji = getAgentEmoji(agentId);
   const agentRole = getAgentChatRole(agentId);
+  const isFrontendMode = runtimeMode === 'frontend';
+  const isBrowserDirect = aiConfig.mode === 'browser_direct';
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -74,7 +113,7 @@ export function ChatPanel() {
           role: 'system' as const,
           content: `${PAPER_CONTEXT}\n\nCurrent role: ${agentName} ${agentEmoji}\nRole description: ${agentRole}`,
         },
-        ...chatMessages.slice(-10).map((message) => ({
+        ...chatMessages.slice(-10).map(message => ({
           role: message.role,
           content: message.content,
         })),
@@ -83,7 +122,15 @@ export function ChatPanel() {
 
       let assistantContent = 'I lost my train of thought. Please ask me again.';
 
-      if (aiConfig.mode === 'browser_direct') {
+      if (isFrontendMode && !isBrowserDirect) {
+        await new Promise(resolve => window.setTimeout(resolve, 280));
+        assistantContent = buildFrontendModeReply({
+          input: currentInput,
+          agentName,
+          agentEmoji,
+          agentRole,
+        });
+      } else if (isBrowserDirect) {
         const data = await callBrowserLLM(messages, aiConfig, {
           maxTokens: 400,
           temperature: 0.7,
@@ -120,14 +167,27 @@ export function ChatPanel() {
     } catch (error: any) {
       addMessage({
         role: 'assistant',
-        content: `The connection had a problem.\n${error?.message || 'Please check the server config.'}`,
+        content: `The connection had a problem.\n${error?.message || 'Please check the current AI configuration.'}`,
         petName: agentId,
         timestamp: Date.now(),
       });
     } finally {
       setLoading(false);
     }
-  }, [addMessage, agentEmoji, agentId, agentName, agentRole, aiConfig, chatMessages, input, isLoading, setLoading]);
+  }, [
+    addMessage,
+    agentEmoji,
+    agentId,
+    agentName,
+    agentRole,
+    aiConfig,
+    chatMessages,
+    input,
+    isBrowserDirect,
+    isFrontendMode,
+    isLoading,
+    setLoading,
+  ]);
 
   if (!isChatOpen) return null;
 
@@ -144,10 +204,24 @@ export function ChatPanel() {
           <div>
             <h3 className="text-sm font-bold text-[#3A2A1A]">Chat with {agentName}</h3>
             <p className="text-[10px] text-[#8B7355]">
-              {agentRole} / {aiConfig.mode === 'browser_direct' ? 'Browser Direct' : 'Server Proxy'}
+              {agentRole} / {getModeLabel(runtimeMode, isBrowserDirect)}
             </p>
           </div>
           <span className="text-lg">{agentEmoji}</span>
+        </div>
+
+        <div className="rounded-full bg-[#F7F1EA] px-2 py-1 text-[9px] font-semibold text-[#6B5A4A]">
+          {isFrontendMode ? (
+            <span className="inline-flex items-center gap-1">
+              <Monitor className="h-3 w-3" />
+              Frontend Mode
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <Server className="h-3 w-3" />
+              Advanced Mode
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
@@ -175,9 +249,19 @@ export function ChatPanel() {
             </div>
             <p className="mb-1 text-sm font-semibold text-[#3A2A1A]">{agentName} is ready</p>
             <p className="text-xs leading-relaxed text-[#8B7355]">
-              Ask about the paper, the multi-agent system,
-              <br />
-              or how this 18-agent workflow is organized.
+              {isFrontendMode ? (
+                <>
+                  Ask about the paper, the browser runtime,
+                  <br />
+                  or when to switch to Advanced Mode.
+                </>
+              ) : (
+                <>
+                  Ask about the paper, the multi-agent system,
+                  <br />
+                  or how this 18-agent workflow is organized.
+                </>
+              )}
             </p>
           </div>
         )}
@@ -229,8 +313,8 @@ export function ChatPanel() {
             ref={inputRef}
             type="text"
             value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
+            onChange={event => setInput(event.target.value)}
+            onKeyDown={event => {
               if (event.key === 'Enter') {
                 event.preventDefault();
                 void sendMessage();
