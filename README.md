@@ -21,6 +21,10 @@
   <a href="https://opencroc.github.io/cube-pets-office/">https://opencroc.github.io/cube-pets-office/</a>
 </p>
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=opencroc/cube-pets-office&type=Date)](https://star-history.com/#opencroc/cube-pets-office&Date)
+
 ## 项目概览
 
 Cube Pets Office 是一个把 3D 场景展示、Agent 组织结构、工作流编排和聊天交互放在同一界面的实验性产品原型。
