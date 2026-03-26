@@ -14,13 +14,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function initializeAgentRuntime() {
-  const db = (await import('./db/index.js')).default;
-  const { ensureAgentWorkspaces } = await import('./memory/workspace.js');
+  const db = (await import("./db/index.js")).default;
+  const { ensureAgentWorkspaces } = await import("./memory/workspace.js");
 
-  const agentIds = db.getAgents().map((agent) => agent.id);
+  const agentIds = db.getAgents().map(agent => agent.id);
   const workspaces = ensureAgentWorkspaces(agentIds);
 
-  console.log(`[Workspace] Ready. ${workspaces.length} agent workspaces materialized.`);
+  console.log(
+    `[Workspace] Ready. ${workspaces.length} agent workspaces materialized.`
+  );
   return { agentIds, workspaceCount: workspaces.length };
 }
 
@@ -62,7 +64,11 @@ async function startServer() {
           failed_stage: workflow.current_stage || null,
         },
       });
-    } else if (workflow.status === "completed" || workflow.status === "failed") {
+    } else if (
+      workflow.status === "completed" ||
+      workflow.status === "completed_with_errors" ||
+      workflow.status === "failed"
+    ) {
       sessionStore.materializeWorkflowMemories(workflow.id);
     }
   }

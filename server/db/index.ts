@@ -3,14 +3,14 @@
  * Compatible with the MySQL schema design from ROADMAP.
  * Can be swapped to MySQL by changing this module.
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '../../data');
-const DB_FILE = path.join(DATA_DIR, 'database.json');
+const DATA_DIR = path.resolve(__dirname, "../../data");
+const DB_FILE = path.join(DATA_DIR, "database.json");
 
 // ============================================================
 // Type Definitions (mirrors MySQL schema)
@@ -18,8 +18,8 @@ const DB_FILE = path.join(DATA_DIR, 'database.json');
 export interface AgentRow {
   id: string;
   name: string;
-  department: 'game' | 'ai' | 'life' | 'meta';
-  role: 'ceo' | 'manager' | 'worker';
+  department: "game" | "ai" | "life" | "meta";
+  role: "ceo" | "manager" | "worker";
   manager_id: string | null;
   model: string;
   soul_md: string | null;
@@ -29,10 +29,17 @@ export interface AgentRow {
   updated_at: string;
 }
 
+export type WorkflowStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "completed_with_errors"
+  | "failed";
+
 export interface WorkflowRun {
   id: string;
   directive: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: WorkflowStatus;
   current_stage: string | null;
   departments_involved: string[];
   started_at: string | null;
@@ -57,7 +64,7 @@ export interface TaskRow {
   workflow_id: string;
   worker_id: string;
   manager_id: string;
-  department: 'game' | 'ai' | 'life' | 'meta';
+  department: "game" | "ai" | "life" | "meta";
   description: string;
   deliverable: string | null;
   deliverable_v2: string | null;
@@ -92,7 +99,7 @@ export interface HeartbeatKeywordRow {
   id: number;
   agent_id: string;
   keyword: string;
-  category: 'effective' | 'neutral' | 'ineffective';
+  category: "effective" | "neutral" | "ineffective";
   correlation: number;
   occurrence_count: number;
   last_seen_at: string | null;
@@ -162,15 +169,23 @@ class Database {
   }
 
   private normalize(raw: any): DatabaseSchema {
-    const data = raw && typeof raw === 'object' ? raw : {};
+    const data = raw && typeof raw === "object" ? raw : {};
 
     const agents = Array.isArray(data.agents) ? data.agents : [];
-    const workflowRuns = Array.isArray(data.workflow_runs) ? data.workflow_runs : [];
+    const workflowRuns = Array.isArray(data.workflow_runs)
+      ? data.workflow_runs
+      : [];
     const messages = Array.isArray(data.messages) ? data.messages : [];
     const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-    const evolutionLog = Array.isArray(data.evolution_log) ? data.evolution_log : [];
-    const heartbeatKeywords = Array.isArray(data.heartbeat_keywords) ? data.heartbeat_keywords : [];
-    const agentCapabilities = Array.isArray(data.agent_capabilities) ? data.agent_capabilities : [];
+    const evolutionLog = Array.isArray(data.evolution_log)
+      ? data.evolution_log
+      : [];
+    const heartbeatKeywords = Array.isArray(data.heartbeat_keywords)
+      ? data.heartbeat_keywords
+      : [];
+    const agentCapabilities = Array.isArray(data.agent_capabilities)
+      ? data.agent_capabilities
+      : [];
 
     const counters = data._counters || {};
 
@@ -183,9 +198,15 @@ class Database {
       heartbeat_keywords: heartbeatKeywords,
       agent_capabilities: agentCapabilities,
       _counters: {
-        messages: Math.max(Number(counters.messages) || 0, this.maxId(messages)),
+        messages: Math.max(
+          Number(counters.messages) || 0,
+          this.maxId(messages)
+        ),
         tasks: Math.max(Number(counters.tasks) || 0, this.maxId(tasks)),
-        evolution_log: Math.max(Number(counters.evolution_log) || 0, this.maxId(evolutionLog)),
+        evolution_log: Math.max(
+          Number(counters.evolution_log) || 0,
+          this.maxId(evolutionLog)
+        ),
         heartbeat_keywords: Math.max(
           Number(counters.heartbeat_keywords) || 0,
           this.maxId(heartbeatKeywords)
@@ -201,11 +222,11 @@ class Database {
   private load(): DatabaseSchema {
     try {
       if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const raw = fs.readFileSync(DB_FILE, "utf-8");
         return this.normalize(JSON.parse(raw));
       }
     } catch (e) {
-      console.error('[DB] Failed to load database, starting fresh:', e);
+      console.error("[DB] Failed to load database, starting fresh:", e);
     }
     return this.getDefaultData();
   }
@@ -215,10 +236,11 @@ class Database {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       try {
-        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+        if (!fs.existsSync(DATA_DIR))
+          fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf-8");
       } catch (e) {
-        console.error('[DB] Failed to save:', e);
+        console.error("[DB] Failed to save:", e);
       }
     }, 100);
   }
@@ -226,11 +248,15 @@ class Database {
   forceSave(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+    fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf-8");
   }
 
   private now(): string {
     return new Date().toISOString();
+  }
+
+  private normalizeDirective(directive: string): string {
+    return directive.trim().replace(/\s+/g, " ");
   }
 
   // ============================================================
@@ -241,34 +267,40 @@ class Database {
   }
 
   getAgent(id: string): AgentRow | undefined {
-    return this.data.agents.find((a) => a.id === id);
+    return this.data.agents.find(a => a.id === id);
   }
 
-  getAgentsByRole(role: 'ceo' | 'manager' | 'worker'): AgentRow[] {
-    return this.data.agents.filter((a) => a.role === role);
+  getAgentsByRole(role: "ceo" | "manager" | "worker"): AgentRow[] {
+    return this.data.agents.filter(a => a.role === role);
   }
 
   getAgentsByDepartment(dept: string): AgentRow[] {
-    return this.data.agents.filter((a) => a.department === dept);
+    return this.data.agents.filter(a => a.department === dept);
   }
 
   getWorkersByManager(managerId: string): AgentRow[] {
-    return this.data.agents.filter((a) => a.manager_id === managerId && a.role === 'worker');
+    return this.data.agents.filter(
+      a => a.manager_id === managerId && a.role === "worker"
+    );
   }
 
   upsertAgent(agent: Partial<AgentRow> & { id: string }): void {
-    const idx = this.data.agents.findIndex((a) => a.id === agent.id);
+    const idx = this.data.agents.findIndex(a => a.id === agent.id);
     const now = this.now();
     if (idx >= 0) {
-      this.data.agents[idx] = { ...this.data.agents[idx], ...agent, updated_at: now };
+      this.data.agents[idx] = {
+        ...this.data.agents[idx],
+        ...agent,
+        updated_at: now,
+      };
     } else {
       this.data.agents.push({
         id: agent.id,
         name: agent.name || agent.id,
-        department: agent.department || 'meta',
-        role: agent.role || 'worker',
+        department: agent.department || "meta",
+        role: agent.role || "worker",
         manager_id: agent.manager_id ?? null,
-        model: agent.model || 'gpt-4o-mini',
+        model: agent.model || "gpt-4o-mini",
         soul_md: agent.soul_md ?? null,
         heartbeat_config: agent.heartbeat_config ?? null,
         is_active: agent.is_active ?? 1,
@@ -300,12 +332,16 @@ class Database {
   // ============================================================
   // Workflow Runs
   // ============================================================
-  createWorkflow(id: string, directive: string, departments: string[]): WorkflowRun {
+  createWorkflow(
+    id: string,
+    directive: string,
+    departments: string[]
+  ): WorkflowRun {
     const now = this.now();
     const wf: WorkflowRun = {
       id,
       directive,
-      status: 'pending',
+      status: "pending",
       current_stage: null,
       departments_involved: departments,
       started_at: null,
@@ -319,11 +355,37 @@ class Database {
   }
 
   getWorkflow(id: string): WorkflowRun | undefined {
-    return this.data.workflow_runs.find((w) => w.id === id);
+    return this.data.workflow_runs.find(w => w.id === id);
   }
 
   getWorkflows(): WorkflowRun[] {
     return [...this.data.workflow_runs].reverse();
+  }
+
+  findWorkflowByDirective(
+    directive: string,
+    options: {
+      statuses?: WorkflowStatus[];
+      maxAgeMs?: number;
+    } = {}
+  ): WorkflowRun | undefined {
+    const normalized = this.normalizeDirective(directive);
+    const statuses = options.statuses;
+    const maxAgeMs = options.maxAgeMs;
+    const now = Date.now();
+
+    return [...this.data.workflow_runs].reverse().find(workflow => {
+      if (statuses && !statuses.includes(workflow.status)) {
+        return false;
+      }
+      if (maxAgeMs !== undefined) {
+        const createdAtMs = Date.parse(workflow.created_at);
+        if (!Number.isFinite(createdAtMs) || now - createdAtMs > maxAgeMs) {
+          return false;
+        }
+      }
+      return this.normalizeDirective(workflow.directive) === normalized;
+    });
   }
 
   updateWorkflow(id: string, updates: Partial<WorkflowRun>): void {
@@ -337,7 +399,7 @@ class Database {
   // ============================================================
   // Messages
   // ============================================================
-  createMessage(msg: Omit<MessageRow, 'id' | 'created_at'>): MessageRow {
+  createMessage(msg: Omit<MessageRow, "id" | "created_at">): MessageRow {
     this.data._counters.messages++;
     const row: MessageRow = {
       ...msg,
@@ -350,19 +412,20 @@ class Database {
   }
 
   getMessagesByWorkflow(workflowId: string): MessageRow[] {
-    return this.data.messages.filter((m) => m.workflow_id === workflowId);
+    return this.data.messages.filter(m => m.workflow_id === workflowId);
   }
 
   getInbox(agentId: string, workflowId?: string): MessageRow[] {
     return this.data.messages.filter(
-      (m) => m.to_agent === agentId && (!workflowId || m.workflow_id === workflowId)
+      m =>
+        m.to_agent === agentId && (!workflowId || m.workflow_id === workflowId)
     );
   }
 
   // ============================================================
   // Tasks
   // ============================================================
-  createTask(task: Omit<TaskRow, 'id' | 'created_at' | 'updated_at'>): TaskRow {
+  createTask(task: Omit<TaskRow, "id" | "created_at" | "updated_at">): TaskRow {
     this.data._counters.tasks++;
     const now = this.now();
     const row: TaskRow = {
@@ -377,11 +440,11 @@ class Database {
   }
 
   getTasksByWorkflow(workflowId: string): TaskRow[] {
-    return this.data.tasks.filter((t) => t.workflow_id === workflowId);
+    return this.data.tasks.filter(t => t.workflow_id === workflowId);
   }
 
   getTask(id: number): TaskRow | undefined {
-    return this.data.tasks.find((t) => t.id === id);
+    return this.data.tasks.find(t => t.id === id);
   }
 
   updateTask(id: number, updates: Partial<TaskRow>): void {
@@ -395,7 +458,9 @@ class Database {
   // ============================================================
   // Evolution Log
   // ============================================================
-  createEvolutionLog(log: Omit<EvolutionLogRow, 'id' | 'created_at'>): EvolutionLogRow {
+  createEvolutionLog(
+    log: Omit<EvolutionLogRow, "id" | "created_at">
+  ): EvolutionLogRow {
     this.data._counters.evolution_log++;
     const row: EvolutionLogRow = {
       ...log,
@@ -408,12 +473,13 @@ class Database {
   }
 
   getEvolutionLogs(agentId?: string): EvolutionLogRow[] {
-    if (agentId) return this.data.evolution_log.filter((e) => e.agent_id === agentId);
+    if (agentId)
+      return this.data.evolution_log.filter(e => e.agent_id === agentId);
     return this.data.evolution_log;
   }
 
   updateEvolutionLog(id: number, updates: Partial<EvolutionLogRow>): void {
-    const log = this.data.evolution_log.find((item) => item.id === id);
+    const log = this.data.evolution_log.find(item => item.id === id);
     if (!log) return;
     Object.assign(log, updates);
     this.save();
@@ -423,16 +489,17 @@ class Database {
   // Heartbeat Keywords
   // ============================================================
   upsertHeartbeatKeyword(
-    keywordRow: Omit<HeartbeatKeywordRow, 'id' | 'created_at'>
+    keywordRow: Omit<HeartbeatKeywordRow, "id" | "created_at">
   ): HeartbeatKeywordRow {
     const normalizedKeyword = keywordRow.keyword.trim().toLowerCase();
     if (!normalizedKeyword) {
-      throw new Error('keyword is required');
+      throw new Error("keyword is required");
     }
 
     const existing = this.data.heartbeat_keywords.find(
-      (item) =>
-        item.agent_id === keywordRow.agent_id && item.keyword.trim().toLowerCase() === normalizedKeyword
+      item =>
+        item.agent_id === keywordRow.agent_id &&
+        item.keyword.trim().toLowerCase() === normalizedKeyword
     );
 
     if (existing) {
@@ -467,7 +534,7 @@ class Database {
 
   getHeartbeatKeywords(agentId?: string): HeartbeatKeywordRow[] {
     const rows = agentId
-      ? this.data.heartbeat_keywords.filter((item) => item.agent_id === agentId)
+      ? this.data.heartbeat_keywords.filter(item => item.agent_id === agentId)
       : this.data.heartbeat_keywords;
 
     return [...rows].sort(
@@ -481,17 +548,18 @@ class Database {
   // Agent Capabilities
   // ============================================================
   upsertAgentCapability(
-    capabilityRow: Omit<AgentCapabilityRow, 'id' | 'created_at' | 'updated_at'>
+    capabilityRow: Omit<AgentCapabilityRow, "id" | "created_at" | "updated_at">
   ): AgentCapabilityRow {
     const normalizedCapability = capabilityRow.capability.trim();
     if (!normalizedCapability) {
-      throw new Error('capability is required');
+      throw new Error("capability is required");
     }
 
     const existing = this.data.agent_capabilities.find(
-      (item) =>
+      item =>
         item.agent_id === capabilityRow.agent_id &&
-        item.capability.trim().toLowerCase() === normalizedCapability.toLowerCase()
+        item.capability.trim().toLowerCase() ===
+          normalizedCapability.toLowerCase()
     );
 
     if (existing) {
@@ -521,7 +589,7 @@ class Database {
 
   getAgentCapabilities(agentId?: string): AgentCapabilityRow[] {
     const rows = agentId
-      ? this.data.agent_capabilities.filter((item) => item.agent_id === agentId)
+      ? this.data.agent_capabilities.filter(item => item.agent_id === agentId)
       : this.data.agent_capabilities;
 
     return [...rows].sort(
@@ -534,13 +602,13 @@ class Database {
   // ============================================================
   getScoresForWorkflow(workflowId: string): TaskRow[] {
     return this.data.tasks.filter(
-      (t) => t.workflow_id === workflowId && t.total_score !== null
+      t => t.workflow_id === workflowId && t.total_score !== null
     );
   }
 
   getRecentScores(agentId: string, limit: number = 5): TaskRow[] {
     return this.data.tasks
-      .filter((t) => t.worker_id === agentId && t.total_score !== null)
+      .filter(t => t.worker_id === agentId && t.total_score !== null)
       .slice(-limit);
   }
 }
