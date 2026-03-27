@@ -11,6 +11,7 @@ export interface WorkflowInputAttachment {
   name: string;
   mimeType: string;
   size: number;
+  content: string;
   excerpt: string;
   excerptStatus: WorkflowAttachmentExcerptStatus;
 }
@@ -19,14 +20,19 @@ function normalizeDirectiveText(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
 
-function clampText(value: string, max: number) {
-  const normalized = value.replace(/\0/g, "").trim();
-  if (normalized.length <= max) {
+export function normalizeWorkflowAttachmentContent(value: string) {
+  const normalized = value.replace(/\0/g, "").replace(/\r\n/g, "\n").trim();
+  return normalized || "(empty file)";
+}
+
+export function buildWorkflowAttachmentExcerpt(value: string) {
+  const normalized = normalizeWorkflowAttachmentContent(value);
+  if (normalized.length <= MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS) {
     return { text: normalized, truncated: false };
   }
 
   return {
-    text: `${normalized.slice(0, max)}\n...[truncated]`,
+    text: `${normalized.slice(0, MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS)}\n...[truncated]`,
     truncated: true,
   };
 }
@@ -59,18 +65,20 @@ export function normalizeWorkflowAttachment(
   const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
   if (!name) return null;
 
-  const excerptValue =
-    typeof candidate.excerpt === "string" ? candidate.excerpt : "";
-  const excerpt = clampText(
-    excerptValue,
-    MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS
-  ).text;
+  const rawContent =
+    typeof candidate.content === "string"
+      ? candidate.content
+      : typeof candidate.excerpt === "string"
+        ? candidate.excerpt
+        : "";
+  const content = normalizeWorkflowAttachmentContent(rawContent);
+  const excerpt = buildWorkflowAttachmentExcerpt(content).text;
   const excerptStatus =
     candidate.excerptStatus === "parsed" ||
     candidate.excerptStatus === "truncated" ||
     candidate.excerptStatus === "metadata_only"
       ? candidate.excerptStatus
-      : excerpt && excerpt !== excerptValue
+      : excerpt !== content
         ? "truncated"
         : "parsed";
 
@@ -85,6 +93,7 @@ export function normalizeWorkflowAttachment(
         ? candidate.mimeType
         : "application/octet-stream",
     size: toFiniteSize(candidate.size),
+    content,
     excerpt,
     excerptStatus,
   };
@@ -112,7 +121,7 @@ export function buildWorkflowInputSignature(
         name: attachment.name,
         mimeType: attachment.mimeType,
         size: attachment.size,
-        excerpt: attachment.excerpt,
+        content: attachment.content,
         excerptStatus: attachment.excerptStatus,
       })),
     })
@@ -135,11 +144,11 @@ export function buildWorkflowDirectiveContext(
       `File size: ${attachment.size} bytes`,
     ];
 
-    if (attachment.excerpt) {
-      lines.push("Content excerpt:");
-      lines.push(attachment.excerpt);
+    if (attachment.content) {
+      lines.push("Full parsed content:");
+      lines.push(attachment.content);
     } else {
-      lines.push("Content excerpt: (not available)");
+      lines.push("Full parsed content: (not available)");
     }
 
     return lines.join("\n");

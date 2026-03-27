@@ -27,7 +27,10 @@ function getWorkflowInputSignature(workflow: ReturnType<typeof db.getWorkflows>[
   const signature = workflow.results?.input?.signature;
   return typeof signature === "string" && signature
     ? signature
-    : buildWorkflowInputSignature(workflow.directive, []);
+    : buildWorkflowInputSignature(
+        workflow.directive,
+        normalizeWorkflowAttachments(workflow.results?.input?.attachments)
+      );
 }
 
 // POST /api/workflows — Start a new workflow

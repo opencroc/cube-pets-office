@@ -85,6 +85,21 @@ function formatAttachmentSize(size: number) {
   return `${size} B`;
 }
 
+function getAttachmentStatusLabel(
+  locale: string,
+  attachment: WorkflowInputAttachment
+) {
+  if (attachment.excerptStatus === 'metadata_only') {
+    return t(locale, '仅导入元数据', 'Metadata only');
+  }
+
+  if (attachment.excerptStatus === 'truncated') {
+    return t(locale, '全文已导入，预览已截断', 'Full content imported, preview truncated');
+  }
+
+  return t(locale, '全文已导入', 'Full content imported');
+}
+
 function useFmt() {
   const locale = useAppStore(state => state.locale);
   const { copy } = useI18n();
@@ -736,7 +751,7 @@ function ProgressView() {
                       <p className="text-[11px] font-semibold text-[#3A2A1A]">{attachment.name}</p>
                       <div className="flex flex-wrap gap-2 text-[9px] text-[#8B7355]">
                         <Pill>{formatAttachmentSize(attachment.size)}</Pill>
-                        <Pill>{attachment.excerptStatus === 'metadata_only' ? t(locale, '元数据', 'Metadata') : t(locale, '已提取', 'Parsed')}</Pill>
+                        <Pill>{getAttachmentStatusLabel(locale, attachment)}</Pill>
                       </div>
                     </div>
                     <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[10px] leading-5 text-[#7A624B]">{attachment.excerpt}</p>

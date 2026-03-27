@@ -1,6 +1,7 @@
 import {
   MAX_WORKFLOW_ATTACHMENTS,
-  MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS,
+  buildWorkflowAttachmentExcerpt,
+  normalizeWorkflowAttachmentContent,
   type WorkflowInputAttachment,
 } from "@shared/workflow-input";
 
@@ -42,28 +43,6 @@ const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "bmp", "gif"]);
 function getFileExtension(name: string) {
   const parts = name.split(".");
   return parts.length > 1 ? parts.at(-1)?.toLowerCase() || "" : "";
-}
-
-function normalizeExcerpt(value: string) {
-  const normalized = value.replace(/\0/g, "").replace(/\r\n/g, "\n").trim();
-  if (!normalized) {
-    return {
-      text: "(empty file)",
-      truncated: false,
-    };
-  }
-
-  if (normalized.length <= MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS) {
-    return {
-      text: normalized,
-      truncated: false,
-    };
-  }
-
-  return {
-    text: `${normalized.slice(0, MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS)}\n...[truncated]`,
-    truncated: true,
-  };
 }
 
 function isTextLikeFile(file: File) {
@@ -143,23 +122,31 @@ function makeAttachmentId(file: File) {
 
 function finalizeAttachment(
   file: File,
-  excerpt: string,
-  source: "parsed" | "truncated" | "metadata_only"
+  content: string,
+  source: "parsed" | "metadata_only"
 ): WorkflowInputAttachment {
+  const normalizedContent = normalizeWorkflowAttachmentContent(content);
+  const excerpt = buildWorkflowAttachmentExcerpt(normalizedContent);
+
   return {
     id: makeAttachmentId(file),
     name: file.name,
     mimeType: file.type || "application/octet-stream",
     size: file.size,
-    excerpt,
-    excerptStatus: source,
+    content: normalizedContent,
+    excerpt: excerpt.text,
+    excerptStatus:
+      source === "metadata_only"
+        ? "metadata_only"
+        : excerpt.truncated
+          ? "truncated"
+          : "parsed",
   };
 }
 
 async function parseTextFile(file: File) {
   const rawText = await file.text();
-  const excerpt = normalizeExcerpt(rawText);
-  return finalizeAttachment(file, excerpt.text, excerpt.truncated ? "truncated" : "parsed");
+  return finalizeAttachment(file, rawText, "parsed");
 }
 
 async function parsePdfFile(file: File) {
@@ -172,9 +159,8 @@ async function parsePdfFile(file: File) {
   }).promise;
 
   const pageTexts: string[] = [];
-  const pageLimit = Math.min(document.numPages, 8);
 
-  for (let pageIndex = 1; pageIndex <= pageLimit; pageIndex += 1) {
+  for (let pageIndex = 1; pageIndex <= document.numPages; pageIndex += 1) {
     const page = await document.getPage(pageIndex);
     const content = await page.getTextContent();
     const text = content.items
@@ -188,8 +174,7 @@ async function parsePdfFile(file: File) {
     }
   }
 
-  const excerpt = normalizeExcerpt(pageTexts.join("\n\n"));
-  return finalizeAttachment(file, excerpt.text, excerpt.truncated ? "truncated" : "parsed");
+  return finalizeAttachment(file, pageTexts.join("\n\n"), "parsed");
 }
 
 async function parseWordFile(file: File) {
@@ -204,14 +189,13 @@ async function parseWordFile(file: File) {
   const combined = warningText
     ? `${result.value}\n\nWarnings:\n${warningText}`
     : result.value;
-  const excerpt = normalizeExcerpt(combined);
-  return finalizeAttachment(file, excerpt.text, excerpt.truncated ? "truncated" : "parsed");
+  return finalizeAttachment(file, combined, "parsed");
 }
 
 async function parseSpreadsheetFile(file: File) {
   const xlsx = await import("xlsx");
   const workbook = xlsx.read(await file.arrayBuffer(), { type: "array" });
-  const sections = workbook.SheetNames.slice(0, 4).map(sheetName => {
+  const sections = workbook.SheetNames.map(sheetName => {
     const sheet = workbook.Sheets[sheetName];
     const rows = xlsx.utils.sheet_to_json(sheet, {
       header: 1,
@@ -219,18 +203,17 @@ async function parseSpreadsheetFile(file: File) {
       blankrows: false,
     }) as Array<Array<string | number | boolean | null | undefined>>;
 
-    const previewRows = rows.slice(0, 12).map(row =>
+    const contentRows = rows.map(row =>
       row
         .map(cell => (cell === null || cell === undefined ? "" : String(cell)))
         .join(" | ")
         .trim()
     );
 
-    return `[Sheet] ${sheetName}\n${previewRows.filter(Boolean).join("\n")}`;
+    return `[Sheet] ${sheetName}\n${contentRows.filter(Boolean).join("\n")}`;
   });
 
-  const excerpt = normalizeExcerpt(sections.join("\n\n"));
-  return finalizeAttachment(file, excerpt.text, excerpt.truncated ? "truncated" : "parsed");
+  return finalizeAttachment(file, sections.join("\n\n"), "parsed");
 }
 
 async function parseImageFile(file: File) {
@@ -240,8 +223,7 @@ async function parseImageFile(file: File) {
       // Keep OCR progress silent in the UI for now.
     },
   });
-  const excerpt = normalizeExcerpt(result.data.text || "");
-  return finalizeAttachment(file, excerpt.text, excerpt.truncated ? "truncated" : "parsed");
+  return finalizeAttachment(file, result.data.text || "", "parsed");
 }
 
 async function fileToAttachment(file: File): Promise<WorkflowInputAttachment> {
