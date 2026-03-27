@@ -9,6 +9,11 @@ import { generateWorkflowOrganization } from "../core/dynamic-organization.js";
 import { workflowEngine } from "../core/workflow-engine.js";
 import { reportStore } from "../memory/report-store.js";
 import { serverRuntime } from "../runtime/server-runtime.js";
+import {
+  buildWorkflowDirectiveContext,
+  buildWorkflowInputSignature,
+  normalizeWorkflowAttachments,
+} from "../../shared/workflow-input.js";
 
 const router = Router();
 const ACTIVE_WORKFLOW_STATUSES = ["pending", "running"] as const;
@@ -18,9 +23,17 @@ function normalizeDirective(directive: string): string {
   return directive.trim().replace(/\s+/g, " ");
 }
 
+function getWorkflowInputSignature(workflow: ReturnType<typeof db.getWorkflows>[number]) {
+  const signature = workflow.results?.input?.signature;
+  return typeof signature === "string" && signature
+    ? signature
+    : buildWorkflowInputSignature(workflow.directive, []);
+}
+
 // POST /api/workflows — Start a new workflow
 router.post("/organization/preview", async (req, res) => {
   const { directive } = req.body;
+  const attachments = normalizeWorkflowAttachments(req.body?.attachments);
   if (!directive || typeof directive !== "string") {
     return res.status(400).json({ error: "directive is required" });
   }
@@ -33,7 +46,7 @@ router.post("/organization/preview", async (req, res) => {
   try {
     const { organization, debug } = await generateWorkflowOrganization({
       workflowId: `preview_${Date.now()}`,
-      directive: normalizedDirective,
+      directive: buildWorkflowDirectiveContext(normalizedDirective, attachments),
       llmProvider: serverRuntime.llmProvider,
       model: getAIConfig().model,
     });
@@ -45,19 +58,32 @@ router.post("/organization/preview", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const { directive } = req.body;
+  const attachments = normalizeWorkflowAttachments(req.body?.attachments);
   if (!directive || typeof directive !== "string") {
     return res.status(400).json({ error: "directive is required" });
   }
 
   const normalizedDirective = normalizeDirective(directive);
+  const inputSignature = buildWorkflowInputSignature(
+    normalizedDirective,
+    attachments
+  );
+  const directiveContext = buildWorkflowDirectiveContext(
+    normalizedDirective,
+    attachments
+  );
   if (!normalizedDirective) {
     return res.status(400).json({ error: "directive is required" });
   }
 
   try {
-    const activeWorkflow = db.findWorkflowByDirective(normalizedDirective, {
-      statuses: [...ACTIVE_WORKFLOW_STATUSES],
-    });
+    const activeWorkflow = db
+      .getWorkflows()
+      .find(
+        workflow =>
+          ACTIVE_WORKFLOW_STATUSES.includes(workflow.status as (typeof ACTIVE_WORKFLOW_STATUSES)[number]) &&
+          getWorkflowInputSignature(workflow) === inputSignature
+      );
     if (activeWorkflow) {
       return res.json({
         workflowId: activeWorkflow.id,
@@ -66,8 +92,13 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const recentWorkflow = db.findWorkflowByDirective(normalizedDirective, {
-      maxAgeMs: RECENT_DUPLICATE_WINDOW_MS,
+    const recentWorkflow = db.getWorkflows().find(workflow => {
+      const createdAtMs = Date.parse(workflow.created_at);
+      if (!Number.isFinite(createdAtMs)) return false;
+      return (
+        Date.now() - createdAtMs <= RECENT_DUPLICATE_WINDOW_MS &&
+        getWorkflowInputSignature(workflow) === inputSignature
+      );
     });
     if (recentWorkflow) {
       return res.json({
@@ -77,7 +108,11 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const workflowId = await workflowEngine.startWorkflow(normalizedDirective);
+    const workflowId = await workflowEngine.startWorkflow(normalizedDirective, {
+      attachments,
+      directiveContext,
+      inputSignature,
+    });
     res.json({ workflowId, status: "running", deduped: false });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

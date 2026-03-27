@@ -3,6 +3,7 @@ import type {
   WorkflowOrganizationNode,
   WorkflowOrganizationSnapshot,
 } from "@shared/organization-schema";
+export type { WorkflowInputAttachment } from "@shared/workflow-input";
 
 export interface AgentInfo {
   id: string;

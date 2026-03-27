@@ -1,0 +1,151 @@
+export const MAX_WORKFLOW_ATTACHMENTS = 4;
+export const MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS = 6000;
+
+export type WorkflowAttachmentExcerptStatus =
+  | "parsed"
+  | "truncated"
+  | "metadata_only";
+
+export interface WorkflowInputAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  excerpt: string;
+  excerptStatus: WorkflowAttachmentExcerptStatus;
+}
+
+function normalizeDirectiveText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function clampText(value: string, max: number) {
+  const normalized = value.replace(/\0/g, "").trim();
+  if (normalized.length <= max) {
+    return { text: normalized, truncated: false };
+  }
+
+  return {
+    text: `${normalized.slice(0, max)}\n...[truncated]`,
+    truncated: true,
+  };
+}
+
+function toFiniteSize(value: unknown) {
+  const next = Number(value);
+  return Number.isFinite(next) && next >= 0 ? next : 0;
+}
+
+function simpleHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash +=
+      (hash << 1) +
+      (hash << 4) +
+      (hash << 7) +
+      (hash << 8) +
+      (hash << 24);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export function normalizeWorkflowAttachment(
+  value: unknown
+): WorkflowInputAttachment | null {
+  if (!value || typeof value !== "object") return null;
+
+  const candidate = value as Partial<WorkflowInputAttachment>;
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  if (!name) return null;
+
+  const excerptValue =
+    typeof candidate.excerpt === "string" ? candidate.excerpt : "";
+  const excerpt = clampText(
+    excerptValue,
+    MAX_WORKFLOW_ATTACHMENT_EXCERPT_CHARS
+  ).text;
+  const excerptStatus =
+    candidate.excerptStatus === "parsed" ||
+    candidate.excerptStatus === "truncated" ||
+    candidate.excerptStatus === "metadata_only"
+      ? candidate.excerptStatus
+      : excerpt && excerpt !== excerptValue
+        ? "truncated"
+        : "parsed";
+
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id
+        : `${name}:${toFiniteSize(candidate.size)}`,
+    name,
+    mimeType:
+      typeof candidate.mimeType === "string" && candidate.mimeType.trim()
+        ? candidate.mimeType
+        : "application/octet-stream",
+    size: toFiniteSize(candidate.size),
+    excerpt,
+    excerptStatus,
+  };
+}
+
+export function normalizeWorkflowAttachments(
+  value: unknown
+): WorkflowInputAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .slice(0, MAX_WORKFLOW_ATTACHMENTS)
+    .map(normalizeWorkflowAttachment)
+    .filter((item): item is WorkflowInputAttachment => Boolean(item));
+}
+
+export function buildWorkflowInputSignature(
+  directive: string,
+  attachments: WorkflowInputAttachment[]
+) {
+  return simpleHash(
+    JSON.stringify({
+      directive: normalizeDirectiveText(directive),
+      attachments: attachments.map(attachment => ({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        excerpt: attachment.excerpt,
+        excerptStatus: attachment.excerptStatus,
+      })),
+    })
+  );
+}
+
+export function buildWorkflowDirectiveContext(
+  directive: string,
+  attachments: WorkflowInputAttachment[]
+) {
+  const normalizedDirective = normalizeDirectiveText(directive);
+  if (attachments.length === 0) {
+    return normalizedDirective;
+  }
+
+  const attachmentSections = attachments.map((attachment, index) => {
+    const lines = [
+      `[Attachment ${index + 1}] ${attachment.name}`,
+      `MIME type: ${attachment.mimeType || "unknown"}`,
+      `File size: ${attachment.size} bytes`,
+    ];
+
+    if (attachment.excerpt) {
+      lines.push("Content excerpt:");
+      lines.push(attachment.excerpt);
+    } else {
+      lines.push("Content excerpt: (not available)");
+    }
+
+    return lines.join("\n");
+  });
+
+  return `${normalizedDirective}\n\nAttached reference files:\n\n${attachmentSections.join(
+    "\n\n---\n\n"
+  )}`;
+}

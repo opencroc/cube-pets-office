@@ -293,7 +293,7 @@ export const messages = {
       directive: {
         title: '发布战略指令',
         description:
-          '输入一条指令，系统会由 CEO 自动拆解，并分发给相关部门执行。',
+          '输入一条指令，并可附带参考文件，系统会由 CEO 自动拆解，并分发给相关部门执行。',
         frontendTitle: '前端模式说明',
         frontendDescription:
           '当前入口会优先保留浏览器本地体验，不会直接连接服务端工作流。你可以先浏览 3D 场景、点选角色和体验本地聊天；准备好后再切到高级模式。',
@@ -321,7 +321,7 @@ export const messages = {
           ['9. CEO 反馈', '给出整体复盘与建议。'],
           ['10. 自动进化', '根据薄弱项更新 SOUL.md。'],
         ],
-        placeholder: '输入战略指令...',
+        placeholder: '输入战略指令，可结合已上传的参考文件...',
         submitting: '正在启动工作流...',
         switchCta: '切换到高级模式',
         previewCta: '在静态预览中发布指令',
@@ -722,7 +722,7 @@ export const messages = {
       directive: {
         title: 'Publish a directive',
         description:
-          'Enter a directive and the CEO will break it down automatically, then distribute it to the relevant departments.',
+          'Enter a directive and optionally attach reference files. The CEO will break it down automatically and route it to the right departments.',
         frontendTitle: 'Frontend Mode note',
         frontendDescription:
           'The current entry keeps the experience inside the browser first, without connecting directly to the server workflow. You can explore the 3D scene, pick roles, and try local chat before switching to Advanced Mode.',
@@ -750,7 +750,7 @@ export const messages = {
           ['9. Feedback', 'The CEO gives an overall retrospective and recommendation.'],
           ['10. Evolution', 'Weak spots feed back into SOUL.md updates.'],
         ],
-        placeholder: 'Enter a strategic directive...',
+        placeholder: 'Enter a directive and use the attached files as context...',
         submitting: 'Starting workflow...',
         switchCta: 'Switch to Advanced Mode',
         previewCta: 'Publish in preview mode',

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
@@ -11,6 +11,7 @@ import {
   Loader2,
   Monitor,
   Network,
+  Paperclip,
   Search,
   Send,
   Server,
@@ -22,6 +23,7 @@ import {
 
 import { useViewportTier } from '@/hooks/useViewportTier';
 import { useI18n } from '@/i18n';
+import { prepareWorkflowAttachments } from '@/lib/workflow-attachments';
 import { CAN_USE_ADVANCED_RUNTIME } from '@/lib/deploy-target';
 import { useAppStore } from '@/lib/store';
 import {
@@ -32,10 +34,15 @@ import {
   type PanelView,
   type StageInfo,
   type TaskInfo,
+  type WorkflowInputAttachment,
   type WorkflowInfo,
   type WorkflowOrganizationNode,
   type WorkflowOrganizationSnapshot,
 } from '@/lib/workflow-store';
+import {
+  MAX_WORKFLOW_ATTACHMENTS,
+  normalizeWorkflowAttachments,
+} from '@shared/workflow-input';
 
 const wfBadge: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700',
@@ -66,6 +73,16 @@ const hbBadge: Record<string, string> = {
 
 function t(locale: string, zh: string, en: string) {
   return locale === 'zh-CN' ? zh : en;
+}
+
+function formatAttachmentSize(size: number) {
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (size >= 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+  return `${size} B`;
 }
 
 function useFmt() {
@@ -274,18 +291,82 @@ function DirectiveView() {
   const setRuntimeMode = useAppStore(state => state.setRuntimeMode);
   const { submitDirective, isSubmitting } = useWorkflowStore();
   const [directive, setDirective] = useState('');
+  const [attachments, setAttachments] = useState<WorkflowInputAttachment[]>([]);
+  const [isPreparingFiles, setIsPreparingFiles] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isFrontend = runtimeMode === 'frontend';
   const canUpgrade = isFrontend && CAN_USE_ADVANCED_RUNTIME;
   const narrative = useMemo(() => getDirectiveNarrative(locale), [locale]);
 
   const handleSubmit = async () => {
-    if (!directive.trim() || isSubmitting) return;
+    if (!directive.trim() || isSubmitting || isPreparingFiles) return;
     if (canUpgrade) {
       await setRuntimeMode('advanced');
       return;
     }
-    await submitDirective(directive.trim());
+    await submitDirective({ directive: directive.trim(), attachments });
     setDirective('');
+    setAttachments([]);
+    setAttachmentError(null);
+  };
+
+  const handlePickFiles = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const fileList = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (fileList.length === 0) return;
+
+    setAttachmentError(null);
+    setIsPreparingFiles(true);
+
+    try {
+      const prepared = await prepareWorkflowAttachments(fileList);
+      let overflowed = false;
+      setAttachments(prev => {
+        const seen = new Set(prev.map(item => `${item.name}:${item.size}:${item.mimeType}`));
+        const next = [...prev];
+        for (const item of prepared) {
+          const key = `${item.name}:${item.size}:${item.mimeType}`;
+          if (seen.has(key)) continue;
+          if (next.length >= MAX_WORKFLOW_ATTACHMENTS) {
+            overflowed = true;
+            break;
+          }
+          next.push(item);
+          seen.add(key);
+        }
+        return next;
+      });
+
+      if (overflowed) {
+        setAttachmentError(
+          t(
+            locale,
+            `最多附带 ${MAX_WORKFLOW_ATTACHMENTS} 个文件，其余文件已忽略。`,
+            `You can attach up to ${MAX_WORKFLOW_ATTACHMENTS} files. Extra files were ignored.`
+          )
+        );
+      }
+    } catch (error) {
+      console.error('[WorkflowPanel] Failed to prepare attachments:', error);
+      setAttachmentError(
+        t(
+          locale,
+          '文件读取失败，请重试或换成 txt / md / json / csv 等文本格式。',
+          'Failed to read the selected files. Try again or use a text-based format such as txt, md, json, or csv.'
+        )
+      );
+    } finally {
+      setIsPreparingFiles(false);
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(item => item.id !== id));
   };
 
   return (
@@ -329,6 +410,82 @@ function DirectiveView() {
       </div>
 
       <div className="border-t border-[#F0E8E0] p-4">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={event => {
+            void handleFilesSelected(event);
+          }}
+        />
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold text-[#8B7355]">
+              {t(locale, '补充参考文件', 'Add reference files')}
+            </p>
+            <p className="text-[10px] leading-5 text-[#B08F72]">
+              {t(
+                locale,
+                '支持文字指令 + 附件一起提交。txt / md / json / PDF / Word / Excel / 图片都会尽量提取摘要，图片会尝试 OCR。',
+                'You can submit text instructions together with attachments. txt / md / json / PDF / Word / Excel / images are parsed when possible, and images attempt OCR.'
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePickFiles}
+            disabled={isPreparingFiles || attachments.length >= MAX_WORKFLOW_ATTACHMENTS}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#E8DDD0] bg-[#F8F4F0] px-3 py-2 text-xs font-semibold text-[#6B5A4A] transition-colors hover:bg-[#F0E8E0] disabled:opacity-40"
+          >
+            {isPreparingFiles ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+            <span>{t(locale, '添加文件', 'Add files')}</span>
+          </button>
+        </div>
+
+        {attachments.length > 0 ? (
+          <div className="mb-3 space-y-2 rounded-2xl border border-[#E8DDD0] bg-[#F8F4F0] p-3">
+            {attachments.map(attachment => (
+              <div key={attachment.id} className="rounded-xl bg-white/90 px-3 py-2 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12px] font-semibold text-[#3A2A1A]">{attachment.name}</p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-[#8B7355]">
+                      <span>{formatAttachmentSize(attachment.size)}</span>
+                      <span>{attachment.mimeType || 'application/octet-stream'}</span>
+                      <span>
+                        {attachment.excerptStatus === 'metadata_only'
+                          ? t(locale, '仅元数据', 'Metadata only')
+                          : attachment.excerptStatus === 'truncated'
+                            ? t(locale, '已截断摘要', 'Excerpt truncated')
+                            : t(locale, '已提取摘要', 'Excerpt parsed')}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(attachment.id)}
+                    className="rounded-lg p-1 text-[#A58971] transition-colors hover:bg-[#F4E8DE] hover:text-[#6B5A4A]"
+                    title={t(locale, '移除附件', 'Remove attachment')}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[10px] leading-5 text-[#7A624B]">
+                  {attachment.excerpt}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {attachmentError ? (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-5 text-amber-700">
+            {attachmentError}
+          </div>
+        ) : null}
+
         <textarea
           value={directive}
           onChange={e => setDirective(e.target.value)}
@@ -342,7 +499,7 @@ function DirectiveView() {
           rows={3}
           className="w-full resize-none rounded-xl border border-[#F0E8E0] bg-[#F8F4F0] px-3 py-2 text-sm text-[#3A2A1A] placeholder:text-[#C4B5A0] focus:border-[#D4845A]/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D4845A]/20"
         />
-        <button onClick={() => void handleSubmit()} disabled={!directive.trim() || isSubmitting} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D4845A] to-[#E4946A] px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-40">
+        <button onClick={() => void handleSubmit()} disabled={!directive.trim() || isSubmitting || isPreparingFiles} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D4845A] to-[#E4946A] px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-40">
           {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : canUpgrade ? <Server className="h-4 w-4" /> : isFrontend ? <Monitor className="h-4 w-4" /> : <Send className="h-4 w-4" />}
           <span>{isSubmitting ? copy.workflow.directive.submitting : canUpgrade ? copy.workflow.directive.switchCta : isFrontend ? copy.workflow.directive.previewCta : copy.workflow.directive.submit}</span>
         </button>
@@ -532,6 +689,10 @@ function ProgressView() {
   const fmt = useFmt();
   const { currentWorkflow, tasks, messages, stages, downloadWorkflowReport, downloadDepartmentReport } = useWorkflowStore();
   const organization = getOrganization(currentWorkflow);
+  const attachments = useMemo(
+    () => normalizeWorkflowAttachments(currentWorkflow?.results?.input?.attachments),
+    [currentWorkflow]
+  );
   const nodeMap = useMemo(() => getNodeMap(organization), [organization]);
   const grouped = Object.entries(
     tasks.reduce<Record<string, TaskInfo[]>>((acc, task) => {
@@ -563,6 +724,27 @@ function ProgressView() {
             <p className="mb-2 text-[11px] font-semibold text-[#8B7355]">{copy.workflow.progress.stageProgress}</p>
             <StageBar stages={stages} current={currentWorkflow.current_stage} />
           </div>
+          {attachments.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-[#E8DDD0] bg-[#F8F4F0] p-3">
+              <p className="text-[11px] font-semibold text-[#8B7355]">
+                {t(locale, '参考文件', 'Reference files')} · {attachments.length}
+              </p>
+              <div className="mt-2 space-y-2">
+                {attachments.map(attachment => (
+                  <div key={attachment.id} className="rounded-xl bg-white/85 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold text-[#3A2A1A]">{attachment.name}</p>
+                      <div className="flex flex-wrap gap-2 text-[9px] text-[#8B7355]">
+                        <Pill>{formatAttachmentSize(attachment.size)}</Pill>
+                        <Pill>{attachment.excerptStatus === 'metadata_only' ? t(locale, '元数据', 'Metadata') : t(locale, '已提取', 'Parsed')}</Pill>
+                      </div>
+                    </div>
+                    <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[10px] leading-5 text-[#7A624B]">{attachment.excerpt}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {organization ? (
             <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-3">
               <div className="flex flex-wrap gap-2">

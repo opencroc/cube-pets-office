@@ -10,6 +10,7 @@ import type {
   RuntimeStateSnapshot,
   RuntimeWorkflowDetail,
   StageInfo,
+  WorkflowInputAttachment,
   WorkflowInfo,
 } from "./types";
 
@@ -215,12 +216,12 @@ class LocalRuntimeClient {
     });
   }
 
-  submitDirective(directive: string) {
+  submitDirective(directive: string, attachments: WorkflowInputAttachment[] = []) {
     return this.request<{
       workflowId: string;
       status: WorkflowInfo["status"];
       deduped: boolean;
-    }>("submit_directive", { directive });
+    }>("submit_directive", { directive, attachments });
   }
 
   downloadWorkflowReport(

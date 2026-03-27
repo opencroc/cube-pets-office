@@ -20,6 +20,17 @@ import {
   persistOrganizationDebugLog,
 } from "./dynamic-organization.js";
 import { serverRuntime } from "../runtime/server-runtime.js";
+import {
+  buildWorkflowDirectiveContext,
+  buildWorkflowInputSignature,
+  type WorkflowInputAttachment,
+} from "../../shared/workflow-input.js";
+
+interface WorkflowStartOptions {
+  attachments?: WorkflowInputAttachment[];
+  directiveContext?: string;
+  inputSignature?: string;
+}
 
 export const V3_STAGES = WORKFLOW_STAGES;
 export type Stage = WorkflowStage;
@@ -101,16 +112,41 @@ export class WorkflowEngine {
     return this.runtime.llmProvider.isTemporarilyUnavailable?.(error) || false;
   }
 
-  async startWorkflow(directive: string): Promise<string> {
+  private getWorkflowDirectiveContext(workflowId: string, fallbackDirective: string) {
+    const workflow = this.repo.getWorkflow(workflowId);
+    const inputContext = workflow?.results?.input?.directiveContext;
+    return typeof inputContext === "string" && inputContext.trim()
+      ? inputContext
+      : fallbackDirective;
+  }
+
+  async startWorkflow(
+    directive: string,
+    options: WorkflowStartOptions = {}
+  ): Promise<string> {
     const workflowId = createWorkflowId();
+    const attachments = Array.isArray(options.attachments) ? options.attachments : [];
+    const directiveContext =
+      options.directiveContext ||
+      buildWorkflowDirectiveContext(directive, attachments);
+    const inputSignature =
+      options.inputSignature ||
+      buildWorkflowInputSignature(directive, attachments);
 
     this.repo.createWorkflow(workflowId, directive, []);
     this.repo.updateWorkflow(workflowId, {
       status: "running",
       started_at: new Date().toISOString(),
+      results: {
+        input: {
+          attachments,
+          directiveContext,
+          signature: inputSignature,
+        },
+      },
     });
 
-    this.runPipeline(workflowId, directive).catch((error: any) => {
+    this.runPipeline(workflowId, directiveContext).catch((error: any) => {
       const workflow = this.repo.getWorkflow(workflowId);
       this.repo.updateWorkflow(workflowId, {
         status: "failed",
@@ -1162,7 +1198,7 @@ Cover:
         `All departments have submitted their summaries. Provide an overall retrospective.
 
 Original user directive:
-${workflow?.directive}
+${this.getWorkflowDirectiveContext(workflowId, workflow?.directive || "")}
 
 Department summaries:
 ${summaryText}

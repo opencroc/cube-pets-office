@@ -3,6 +3,10 @@
  */
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
+import {
+  buildWorkflowInputSignature,
+  normalizeWorkflowAttachments,
+} from "@shared/workflow-input";
 
 import { useAppStore } from "@/lib/store";
 import {
@@ -33,6 +37,7 @@ import type {
   RuntimeEvent,
   StageInfo,
   TaskInfo,
+  WorkflowInputAttachment,
   WorkflowInfo,
   WorkflowOrganizationNode,
   WorkflowOrganizationSnapshot,
@@ -47,10 +52,16 @@ export type {
   MessageInfo,
   StageInfo,
   TaskInfo,
+  WorkflowInputAttachment,
   WorkflowInfo,
   WorkflowOrganizationNode,
   WorkflowOrganizationSnapshot,
 };
+
+export interface DirectiveSubmissionInput {
+  directive: string;
+  attachments?: WorkflowInputAttachment[];
+}
 
 export type PanelView =
   | "directive"
@@ -92,6 +103,18 @@ function mergeHeartbeatStatus(
 
 function normalizeDirective(directive: string): string {
   return directive.trim().replace(/\s+/g, " ");
+}
+
+function getWorkflowInputSignature(workflow: WorkflowInfo) {
+  const signature = workflow.results?.input?.signature;
+  if (typeof signature === "string" && signature) {
+    return signature;
+  }
+
+  return buildWorkflowInputSignature(
+    workflow.directive,
+    normalizeWorkflowAttachments(workflow.results?.input?.attachments)
+  );
 }
 
 function isTerminalWorkflowStatus(status: WorkflowInfo["status"]): boolean {
@@ -158,7 +181,7 @@ interface WorkflowState {
   isWorkflowPanelOpen: boolean;
   activeView: PanelView;
   isSubmitting: boolean;
-  lastSubmittedDirective: string | null;
+  lastSubmittedInputSignature: string | null;
   lastSubmittedAt: number | null;
   isMemoryLoading: boolean;
   isHeartbeatLoading: boolean;
@@ -188,7 +211,7 @@ interface WorkflowState {
     limit?: number
   ) => Promise<void>;
   runHeartbeat: (agentId: string) => Promise<boolean>;
-  submitDirective: (directive: string) => Promise<string | null>;
+  submitDirective: (input: DirectiveSubmissionInput) => Promise<string | null>;
   downloadWorkflowReport: (
     workflowId: string,
     format: "json" | "md"
@@ -381,7 +404,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   isWorkflowPanelOpen: false,
   activeView: "directive",
   isSubmitting: false,
-  lastSubmittedDirective: null,
+  lastSubmittedInputSignature: null,
   lastSubmittedAt: null,
   isMemoryLoading: false,
   isHeartbeatLoading: false,
@@ -798,9 +821,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  submitDirective: async (directive: string) => {
-    const normalizedDirective = normalizeDirective(directive);
+  submitDirective: async (input: DirectiveSubmissionInput) => {
+    const normalizedDirective = normalizeDirective(input.directive);
+    const attachments = normalizeWorkflowAttachments(input.attachments);
     if (!normalizedDirective) return null;
+    const inputSignature = buildWorkflowInputSignature(
+      normalizedDirective,
+      attachments
+    );
 
     const state = get();
     const now = Date.now();
@@ -808,12 +836,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     const existingRunningWorkflow =
       currentWorkflow &&
       !isTerminalWorkflowStatus(currentWorkflow.status) &&
-      normalizeDirective(currentWorkflow.directive) === normalizedDirective
+      getWorkflowInputSignature(currentWorkflow) === inputSignature
         ? currentWorkflow
         : state.workflows.find(
             workflow =>
               !isTerminalWorkflowStatus(workflow.status) &&
-              normalizeDirective(workflow.directive) === normalizedDirective
+              getWorkflowInputSignature(workflow) === inputSignature
           );
 
     if (existingRunningWorkflow) {
@@ -827,7 +855,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
 
     if (
-      state.lastSubmittedDirective === normalizedDirective &&
+      state.lastSubmittedInputSignature === inputSignature &&
       state.lastSubmittedAt !== null &&
       now - state.lastSubmittedAt < 5000
     ) {
@@ -836,7 +864,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     set({
       isSubmitting: true,
-      lastSubmittedDirective: normalizedDirective,
+      lastSubmittedInputSignature: inputSignature,
       lastSubmittedAt: now,
     });
 
@@ -846,7 +874,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             const response = await fetch("/api/workflows", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ directive: normalizedDirective }),
+              body: JSON.stringify({
+                directive: normalizedDirective,
+                attachments,
+              }),
             });
             const payload = await response.json();
             if (!response.ok) {
@@ -854,14 +885,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             }
             return payload;
           })()
-        : await localRuntime.submitDirective(normalizedDirective);
+        : await localRuntime.submitDirective(normalizedDirective, attachments);
 
       if (data.workflowId) {
         set({
           currentWorkflowId: data.workflowId,
           activeView: "workflow",
           isSubmitting: false,
-          lastSubmittedDirective: normalizedDirective,
+          lastSubmittedInputSignature: inputSignature,
           lastSubmittedAt: Date.now(),
         });
         await get().fetchWorkflowDetail(data.workflowId);

@@ -7,6 +7,12 @@ import {
   getWorkersForManager,
   STAGES,
 } from "./local-runtime-data";
+import {
+  buildWorkflowDirectiveContext,
+  buildWorkflowInputSignature,
+  normalizeWorkflowAttachments,
+  type WorkflowInputAttachment,
+} from "@shared/workflow-input";
 import type {
   AgentInfo,
   HeartbeatReportInfo,
@@ -93,6 +99,22 @@ function uuid() {
 
 function normalizeDirective(directive: string) {
   return directive.trim().replace(/\s+/g, " ");
+}
+
+function getWorkflowInputAttachments(workflow: WorkflowInfo) {
+  return normalizeWorkflowAttachments(workflow.results?.input?.attachments);
+}
+
+function getWorkflowInputSignature(workflow: WorkflowInfo) {
+  const signature = workflow.results?.input?.signature;
+  return typeof signature === "string" && signature
+    ? signature
+    : buildWorkflowInputSignature(workflow.directive, getWorkflowInputAttachments(workflow));
+}
+
+function getWorkflowDirectiveContext(workflow: WorkflowInfo) {
+  const context = workflow.results?.input?.directiveContext;
+  return typeof context === "string" && context.trim() ? context : workflow.directive;
 }
 
 function inferDepartments(directive: string) {
@@ -246,6 +268,7 @@ function getDepartmentSummary(workflowId: string, department: string) {
 
 function buildWorkflowReport(workflow: WorkflowInfo) {
   const tasks = state.tasks.filter(task => task.workflow_id === workflow.id);
+  const attachments = getWorkflowInputAttachments(workflow);
   const departmentReports = (workflow.results?.department_reports || []).map(
     (item: any) => ({
       manager_id: item.manager_id,
@@ -278,6 +301,7 @@ function buildWorkflowReport(workflow: WorkflowInfo) {
       startedAt: workflow.started_at,
       completedAt: workflow.completed_at,
       departmentsInvolved: workflow.departments_involved,
+      attachments,
     },
     stats: {
       messageCount: state.messages.filter(message => message.workflow_id === workflow.id).length,
@@ -433,6 +457,7 @@ function scoreTask(task: TaskInfo) {
 async function executeWorkflow(workflowId: string) {
   const workflow = getWorkflow(workflowId);
   if (!workflow) return;
+  const directiveContext = getWorkflowDirectiveContext(workflow);
 
   updateWorkflow(workflowId, { status: "running", started_at: now() });
 
@@ -443,7 +468,7 @@ async function executeWorkflow(workflowId: string) {
 
     const directions = workflow.departments_involved.map(department => {
       const manager = getManagerForDepartment(department, state.agents);
-      const text = `Focus ${department} on the directive: ${workflow.directive}`;
+      const text = `Focus ${department} on the directive: ${directiveContext}`;
       if (manager) {
         createMessage(workflowId, "ceo", manager.id, "direction", text);
       }
@@ -463,7 +488,7 @@ async function executeWorkflow(workflowId: string) {
           workflow,
           worker,
           item.manager!,
-          `${worker.name} prepares ${item.department} output ${index + 1} for "${workflow.directive}".`
+          `${worker.name} prepares ${item.department} output ${index + 1} for "${directiveContext}".`
         )
       );
       for (const task of createdTasks) {
@@ -490,7 +515,7 @@ async function executeWorkflow(workflowId: string) {
         status: "executing",
       });
       await delay(300);
-      const deliverable = `${task.worker_id} produced a concrete plan for "${workflow.directive}" with next steps, owners, and checkpoints.`;
+      const deliverable = `${task.worker_id} produced a concrete plan for "${directiveContext}" with next steps, owners, and checkpoints.`;
       updateTask(task.id, { status: "submitted", deliverable });
       createMessage(workflowId, task.worker_id, task.manager_id, "execution", deliverable);
       emit({
@@ -843,14 +868,17 @@ scope.onmessage = async event => {
       }
       case "submit_directive": {
         const directive = normalizeDirective(String(message.payload.directive || ""));
+        const attachments = normalizeWorkflowAttachments(message.payload.attachments);
         if (!directive) {
           throw new Error("Directive is required.");
         }
+        const directiveContext = buildWorkflowDirectiveContext(directive, attachments);
+        const inputSignature = buildWorkflowInputSignature(directive, attachments);
 
         const existing = state.workflows.find(
           workflow =>
             workflow.status === "running" &&
-            normalizeDirective(workflow.directive) === directive
+            getWorkflowInputSignature(workflow) === inputSignature
         );
         if (existing) {
           respond(message.requestId, {
@@ -866,10 +894,16 @@ scope.onmessage = async event => {
           directive,
           status: "pending",
           current_stage: null,
-          departments_involved: inferDepartments(directive),
+          departments_involved: inferDepartments(directiveContext),
           started_at: null,
           completed_at: null,
-          results: {},
+          results: {
+            input: {
+              attachments,
+              directiveContext,
+              signature: inputSignature,
+            },
+          },
           created_at: now(),
         };
         state.workflows = [workflow, ...state.workflows];
