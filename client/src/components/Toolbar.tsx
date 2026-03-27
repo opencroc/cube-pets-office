@@ -11,8 +11,9 @@ import {
   X,
 } from 'lucide-react';
 
+import { GitHubRepoBadge } from '@/components/GitHubRepoBadge';
 import { getAgentToolbarLabel } from '@/lib/agent-config';
-import { CAN_USE_ADVANCED_RUNTIME } from '@/lib/deploy-target';
+import { CAN_USE_ADVANCED_RUNTIME, IS_GITHUB_PAGES } from '@/lib/deploy-target';
 import { useAppStore } from '@/lib/store';
 import { useWorkflowStore } from '@/lib/workflow-store';
 
@@ -39,6 +40,7 @@ export function Toolbar() {
   const { isWorkflowPanelOpen, toggleWorkflowPanel } = useWorkflowStore();
 
   const [showInfo, setShowInfo] = useState(false);
+  const showGitHubBadge = IS_GITHUB_PAGES;
 
   const dockButtons: DockButton[] = [
     {
@@ -233,17 +235,23 @@ export function Toolbar() {
         </div>
       </div>
 
-      {selectedPet && (
+      {(showGitHubBadge || selectedPet) && (
         <div
-          className="fixed right-5 top-24 z-[60] max-w-[280px] rounded-[24px] border border-white/60 bg-white/82 px-4 py-3 shadow-[0_12px_30px_rgba(60,44,28,0.14)] backdrop-blur-2xl animate-in fade-in slide-in-from-right-2 duration-300"
+          className="fixed right-4 top-4 z-[60] flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-3 sm:right-5 sm:top-5"
           style={{ pointerEvents: 'auto' }}
         >
-          <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#A08972]">
-            Current Focus
-          </p>
-          <p className="mt-1 text-sm font-semibold text-[#3A2A1A]">
-            {getAgentToolbarLabel(selectedPet)}
-          </p>
+          <GitHubRepoBadge />
+
+          {selectedPet && (
+            <div className="rounded-[24px] border border-white/60 bg-white/82 px-4 py-3 shadow-[0_12px_30px_rgba(60,44,28,0.14)] backdrop-blur-2xl animate-in fade-in slide-in-from-right-2 duration-300">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#A08972]">
+                Current Focus
+              </p>
+              <p className="mt-1 text-sm font-semibold text-[#3A2A1A]">
+                {getAgentToolbarLabel(selectedPet)}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </>
