@@ -43,7 +43,7 @@ interface ProviderConfig {
   chatThinkingType?: string;
 }
 
-const MAX_CONCURRENT = Math.max(1, Number(process.env.LLM_MAX_CONCURRENT || 2));
+const MAX_CONCURRENT = Math.max(1, Number(process.env.LLM_MAX_CONCURRENT || 9999));
 let activeRequests = 0;
 const requestQueue: Array<() => void> = [];
 const providerCooldownUntil = new Map<string, number>();
