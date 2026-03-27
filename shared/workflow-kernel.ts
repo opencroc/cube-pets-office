@@ -408,45 +408,54 @@ Break the direction into concrete worker tasks. Return valid JSON only:
     this.emitStage(workflowId, "execution");
 
     const tasks = this.repo.getTasksByWorkflow(workflowId);
-    let llmOutageMessage: string | null = null;
-
+    const tasksByWorker = new Map<string, TaskRecord[]>();
     for (const task of tasks) {
-      const worker = this.runtime.agentDirectory.get(task.worker_id);
-      if (!worker) continue;
+      const list = tasksByWorker.get(task.worker_id) || [];
+      list.push(task);
+      tasksByWorker.set(task.worker_id, list);
+    }
 
-      if (llmOutageMessage) {
-        this.repo.updateTask(task.id, {
-          status: "failed",
-          deliverable: `Skipped after LLM degradation: ${llmOutageMessage}`,
-        });
-        this.emit({
-          type: "task_update",
-          workflowId,
-          taskId: task.id,
-          workerId: task.worker_id,
-          status: "failed",
-        });
-        continue;
-      }
+    await Promise.all(
+      Array.from(tasksByWorker.entries()).map(async ([workerId, workerTasks]) => {
+        const worker = this.runtime.agentDirectory.get(workerId);
+        if (!worker) return;
 
-      this.emit({
-        type: "agent_active",
-        agentId: task.worker_id,
-        action: "executing",
-        workflowId,
-      });
-      this.repo.updateTask(task.id, { status: "executing" });
-      this.emit({
-        type: "task_update",
-        workflowId,
-        taskId: task.id,
-        workerId: task.worker_id,
-        status: "executing",
-      });
+        let llmOutageMessage: string | null = null;
 
-      try {
-        const deliverable = await worker.invoke(
-          `Complete the following task and return a detailed, actionable deliverable.
+        for (const task of workerTasks) {
+          if (llmOutageMessage) {
+            this.repo.updateTask(task.id, {
+              status: "failed",
+              deliverable: `Skipped after LLM degradation: ${llmOutageMessage}`,
+            });
+            this.emit({
+              type: "task_update",
+              workflowId,
+              taskId: task.id,
+              workerId: task.worker_id,
+              status: "failed",
+            });
+            continue;
+          }
+
+          this.emit({
+            type: "agent_active",
+            agentId: task.worker_id,
+            action: "executing",
+            workflowId,
+          });
+          this.repo.updateTask(task.id, { status: "executing" });
+          this.emit({
+            type: "task_update",
+            workflowId,
+            taskId: task.id,
+            workerId: task.worker_id,
+            status: "executing",
+          });
+
+          try {
+            const deliverable = await worker.invoke(
+              `Complete the following task and return a detailed, actionable deliverable.
 
 Task:
 ${task.description}
@@ -455,56 +464,58 @@ Requirements:
 - avoid vague statements
 - prefer structured output, steps, examples, and reasoning
 - make the result reviewable by a manager`,
-          undefined,
-          { workflowId, stage: "execution" }
-        );
+              undefined,
+              { workflowId, stage: "execution" }
+            );
 
-        this.repo.updateTask(task.id, {
-          deliverable,
-          status: "submitted",
-        });
+            this.repo.updateTask(task.id, {
+              deliverable,
+              status: "submitted",
+            });
 
-        await this.runtime.messageBus.send(
-          task.worker_id,
-          task.manager_id,
-          deliverable,
-          workflowId,
-          "execution",
-          { taskId: task.id }
-        );
+            await this.runtime.messageBus.send(
+              task.worker_id,
+              task.manager_id,
+              deliverable,
+              workflowId,
+              "execution",
+              { taskId: task.id }
+            );
 
-        this.emit({
-          type: "task_update",
-          workflowId,
-          taskId: task.id,
-          workerId: task.worker_id,
-          status: "submitted",
-        });
-      } catch (err: any) {
-        this.repo.updateTask(task.id, {
-          status: "failed",
-          deliverable: `Error: ${err.message}`,
-        });
-        this.recordWorkflowIssue(workflowId, {
-          stage: "execution",
-          scope: "task",
-          severity: "warning",
-          taskId: task.id,
-          agentId: task.worker_id,
-          message: `Worker execution failed: ${err.message}`,
-        });
-        if (this.isTemporaryLLMError(err)) {
-          llmOutageMessage = err.message;
+            this.emit({
+              type: "task_update",
+              workflowId,
+              taskId: task.id,
+              workerId: task.worker_id,
+              status: "submitted",
+            });
+          } catch (err: any) {
+            this.repo.updateTask(task.id, {
+              status: "failed",
+              deliverable: `Error: ${err.message}`,
+            });
+            this.recordWorkflowIssue(workflowId, {
+              stage: "execution",
+              scope: "task",
+              severity: "warning",
+              taskId: task.id,
+              agentId: task.worker_id,
+              message: `Worker execution failed: ${err.message}`,
+            });
+            if (this.isTemporaryLLMError(err)) {
+              llmOutageMessage = err.message;
+            }
+          }
+
+          this.emit({
+            type: "agent_active",
+            agentId: task.worker_id,
+            action: "idle",
+            workflowId,
+          });
         }
-      }
-
-      this.emit({
-        type: "agent_active",
-        agentId: task.worker_id,
-        action: "idle",
-        workflowId,
-      });
-    }
+      })
+    );
   }
 
   private async runReview(workflowId: string): Promise<void> {
@@ -518,30 +529,31 @@ Requirements:
       tasksByManager.set(task.manager_id, list);
     }
 
-    for (const [managerId, tasks] of Array.from(tasksByManager.entries())) {
-      const manager = this.runtime.agentDirectory.get(managerId);
-      if (!manager) continue;
+    await Promise.all(
+      Array.from(tasksByManager.entries()).map(async ([managerId, tasks]) => {
+        const manager = this.runtime.agentDirectory.get(managerId);
+        if (!manager) return;
 
-      this.emit({
-        type: "agent_active",
-        agentId: managerId,
-        action: "reviewing",
-        workflowId,
-      });
+        this.emit({
+          type: "agent_active",
+          agentId: managerId,
+          action: "reviewing",
+          workflowId,
+        });
 
-      let llmOutageMessage: string | null = null;
+        let llmOutageMessage: string | null = null;
 
-      for (const task of tasks) {
-        if (llmOutageMessage) {
-          this.applyDefaultReview(
-            task,
-            `Review skipped after LLM degradation: ${llmOutageMessage}`
-          );
-          continue;
-        }
+        for (const task of tasks) {
+          if (llmOutageMessage) {
+            this.applyDefaultReview(
+              task,
+              `Review skipped after LLM degradation: ${llmOutageMessage}`
+            );
+            continue;
+          }
 
-        try {
-          const score = await manager.invokeJson<ReviewScore>(
+          try {
+            const score = await manager.invokeJson<ReviewScore>(
             `Review the following deliverable and score each dimension from 0 to 5.
 
 Dimensions:
@@ -569,73 +581,74 @@ Return valid JSON only:
             { workflowId, stage: "review" }
           );
 
-          const accuracy = Math.min(5, Math.max(0, Math.round(score.accuracy || 0)));
-          const completeness = Math.min(
-            5,
-            Math.max(0, Math.round(score.completeness || 0))
-          );
-          const actionability = Math.min(
-            5,
-            Math.max(0, Math.round(score.actionability || 0))
-          );
-          const format = Math.min(5, Math.max(0, Math.round(score.format || 0)));
-          const total = accuracy + completeness + actionability + format;
+            const accuracy = Math.min(5, Math.max(0, Math.round(score.accuracy || 0)));
+            const completeness = Math.min(
+              5,
+              Math.max(0, Math.round(score.completeness || 0))
+            );
+            const actionability = Math.min(
+              5,
+              Math.max(0, Math.round(score.actionability || 0))
+            );
+            const format = Math.min(5, Math.max(0, Math.round(score.format || 0)));
+            const total = accuracy + completeness + actionability + format;
 
-          this.repo.updateTask(task.id, {
-            score_accuracy: accuracy,
-            score_completeness: completeness,
-            score_actionability: actionability,
-            score_format: format,
-            total_score: total,
-            manager_feedback: score.feedback || "",
-            status: "reviewed",
-          });
+            this.repo.updateTask(task.id, {
+              score_accuracy: accuracy,
+              score_completeness: completeness,
+              score_actionability: actionability,
+              score_format: format,
+              total_score: total,
+              manager_feedback: score.feedback || "",
+              status: "reviewed",
+            });
 
-          this.emit({
-            type: "score_assigned",
-            workflowId,
-            taskId: task.id,
-            workerId: task.worker_id,
-            score: total,
-          });
-
-          await this.runtime.messageBus.send(
-            managerId,
-            task.worker_id,
-            `Score: ${total}/20\nFeedback: ${score.feedback}`,
-            workflowId,
-            "review",
-            {
+            this.emit({
+              type: "score_assigned",
+              workflowId,
               taskId: task.id,
-              score: { accuracy, completeness, actionability, format, total },
+              workerId: task.worker_id,
+              score: total,
+            });
+
+            await this.runtime.messageBus.send(
+              managerId,
+              task.worker_id,
+              `Score: ${total}/20\nFeedback: ${score.feedback}`,
+              workflowId,
+              "review",
+              {
+                taskId: task.id,
+                score: { accuracy, completeness, actionability, format, total },
+              }
+            );
+          } catch (err: any) {
+            this.applyDefaultReview(
+              task,
+              "Review failed, falling back to a default score."
+            );
+            this.recordWorkflowIssue(workflowId, {
+              stage: "review",
+              scope: "task",
+              severity: "warning",
+              taskId: task.id,
+              agentId: managerId,
+              message: `Review failed: ${err.message}`,
+            });
+            if (this.isTemporaryLLMError(err)) {
+              llmOutageMessage = err.message;
             }
-          );
-        } catch (err: any) {
-          this.applyDefaultReview(
-            task,
-            "Review failed, falling back to a default score."
-          );
-          this.recordWorkflowIssue(workflowId, {
-            stage: "review",
-            scope: "task",
-            severity: "warning",
-            taskId: task.id,
-            agentId: managerId,
-            message: `Review failed: ${err.message}`,
-          });
-          if (this.isTemporaryLLMError(err)) {
-            llmOutageMessage = err.message;
           }
         }
-      }
 
-      this.emit({
-        type: "agent_active",
-        agentId: managerId,
-        action: "idle",
-        workflowId,
-      });
-    }
+        this.emit({
+          type: "agent_active",
+          agentId: managerId,
+          action: "idle",
+          workflowId,
+        });
+      })
+    );
   }
 
   private async runMetaAudit(workflowId: string): Promise<void> {
@@ -775,53 +788,62 @@ Return a concise quality analysis with concrete findings.`,
       return;
     }
 
-    let llmOutageMessage: string | null = null;
-
+    const tasksByWorker = new Map<string, TaskRecord[]>();
     for (const task of needsRevision) {
-      const worker = this.runtime.agentDirectory.get(task.worker_id);
-      if (!worker) continue;
+      const list = tasksByWorker.get(task.worker_id) || [];
+      list.push(task);
+      tasksByWorker.set(task.worker_id, list);
+    }
 
-      if (llmOutageMessage) {
-        this.repo.updateTask(task.id, { status: "passed" });
-        this.emit({
-          type: "task_update",
-          workflowId,
-          taskId: task.id,
-          workerId: task.worker_id,
-          status: "passed",
-        });
-        continue;
-      }
+    await Promise.all(
+      Array.from(tasksByWorker.entries()).map(async ([workerId, workerTasks]) => {
+        const worker = this.runtime.agentDirectory.get(workerId);
+        if (!worker) return;
 
-      this.emit({
-        type: "agent_active",
-        agentId: task.worker_id,
-        action: "revising",
-        workflowId,
-      });
-      this.repo.updateTask(task.id, { status: "revising" });
-      this.emit({
-        type: "task_update",
-        workflowId,
-        taskId: task.id,
-        workerId: task.worker_id,
-        status: "revising",
-      });
+        let llmOutageMessage: string | null = null;
 
-      try {
-        const combinedFeedback = [
-          task.manager_feedback
-            ? `Manager feedback: ${task.manager_feedback}`
-            : "",
-          task.meta_audit_feedback
-            ? `Meta audit feedback: ${task.meta_audit_feedback}`
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+        for (const task of workerTasks) {
+          if (llmOutageMessage) {
+            this.repo.updateTask(task.id, { status: "passed" });
+            this.emit({
+              type: "task_update",
+              workflowId,
+              taskId: task.id,
+              workerId: task.worker_id,
+              status: "passed",
+            });
+            continue;
+          }
 
-        const revised = await worker.invoke(
-          `Revise your previous deliverable based on the feedback below.
+          this.emit({
+            type: "agent_active",
+            agentId: task.worker_id,
+            action: "revising",
+            workflowId,
+          });
+          this.repo.updateTask(task.id, { status: "revising" });
+          this.emit({
+            type: "task_update",
+            workflowId,
+            taskId: task.id,
+            workerId: task.worker_id,
+            status: "revising",
+          });
+
+          try {
+            const combinedFeedback = [
+              task.manager_feedback
+                ? `Manager feedback: ${task.manager_feedback}`
+                : "",
+              task.meta_audit_feedback
+                ? `Meta audit feedback: ${task.meta_audit_feedback}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
+            const revised = await worker.invoke(
+              `Revise your previous deliverable based on the feedback below.
 
 Original task:
 ${task.description}
@@ -836,54 +858,56 @@ Feedback received:
 ${combinedFeedback}
 
 Return a complete v2 deliverable that directly fixes the issues.`,
-          undefined,
-          { workflowId, stage: "revision" }
-        );
+              undefined,
+              { workflowId, stage: "revision" }
+            );
 
-        this.repo.updateTask(task.id, {
-          deliverable_v2: revised,
-          version: 2,
-          status: "submitted",
-        });
+            this.repo.updateTask(task.id, {
+              deliverable_v2: revised,
+              version: 2,
+              status: "submitted",
+            });
 
-        await this.runtime.messageBus.send(
-          task.worker_id,
-          task.manager_id,
-          revised,
-          workflowId,
-          "revision",
-          { taskId: task.id, version: 2 }
-        );
+            await this.runtime.messageBus.send(
+              task.worker_id,
+              task.manager_id,
+              revised,
+              workflowId,
+              "revision",
+              { taskId: task.id, version: 2 }
+            );
 
-        this.emit({
-          type: "task_update",
-          workflowId,
-          taskId: task.id,
-          workerId: task.worker_id,
-          status: "submitted",
-        });
-      } catch (err: any) {
-        this.repo.updateTask(task.id, { status: "passed" });
-        this.recordWorkflowIssue(workflowId, {
-          stage: "revision",
-          scope: "task",
-          severity: "warning",
-          taskId: task.id,
-          agentId: task.worker_id,
-          message: `Revision failed: ${err.message}`,
-        });
-        if (this.isTemporaryLLMError(err)) {
-          llmOutageMessage = err.message;
+            this.emit({
+              type: "task_update",
+              workflowId,
+              taskId: task.id,
+              workerId: task.worker_id,
+              status: "submitted",
+            });
+          } catch (err: any) {
+            this.repo.updateTask(task.id, { status: "passed" });
+            this.recordWorkflowIssue(workflowId, {
+              stage: "revision",
+              scope: "task",
+              severity: "warning",
+              taskId: task.id,
+              agentId: task.worker_id,
+              message: `Revision failed: ${err.message}`,
+            });
+            if (this.isTemporaryLLMError(err)) {
+              llmOutageMessage = err.message;
+            }
+          }
+
+          this.emit({
+            type: "agent_active",
+            agentId: task.worker_id,
+            action: "idle",
+            workflowId,
+          });
         }
-      }
-
-      this.emit({
-        type: "agent_active",
-        agentId: task.worker_id,
-        action: "idle",
-        workflowId,
-      });
-    }
+      })
+    );
   }
 
   private async runVerify(workflowId: string): Promise<void> {
@@ -894,29 +918,40 @@ Return a complete v2 deliverable that directly fixes the issues.`,
       .filter(task => task.status === "submitted" && task.version === 2);
     if (tasks.length === 0) return;
 
-    let llmOutageMessage: string | null = null;
-
+    const tasksByManager = new Map<string, TaskRecord[]>();
     for (const task of tasks) {
-      const manager = this.runtime.agentDirectory.get(task.manager_id);
-      if (!manager) {
-        this.repo.updateTask(task.id, { status: "passed" });
-        continue;
-      }
+      const list = tasksByManager.get(task.manager_id) || [];
+      list.push(task);
+      tasksByManager.set(task.manager_id, list);
+    }
 
-      if (llmOutageMessage) {
-        this.repo.updateTask(task.id, { status: "passed" });
-        continue;
-      }
+    await Promise.all(
+      Array.from(tasksByManager.entries()).map(async ([managerId, managerTasks]) => {
+        const manager = this.runtime.agentDirectory.get(managerId);
+        if (!manager) {
+          for (const task of managerTasks) {
+            this.repo.updateTask(task.id, { status: "passed" });
+          }
+          return;
+        }
 
-      this.emit({
-        type: "agent_active",
-        agentId: task.manager_id,
-        action: "verifying",
-        workflowId,
-      });
+        let llmOutageMessage: string | null = null;
 
-      try {
-        const result = await manager.invokeJson<VerifyResult>(
+        for (const task of managerTasks) {
+          if (llmOutageMessage) {
+            this.repo.updateTask(task.id, { status: "passed" });
+            continue;
+          }
+
+          this.emit({
+            type: "agent_active",
+            agentId: task.manager_id,
+            action: "verifying",
+            workflowId,
+          });
+
+          try {
+            const result = await manager.invokeJson<VerifyResult>(
           `Check whether the revised deliverable fully addresses the feedback.
 
 Original feedback:
@@ -941,28 +976,28 @@ Return valid JSON only:
           { workflowId, stage: "verify" }
         );
 
-        this.repo.updateTask(task.id, {
-          verify_result: result,
-          status:
-            result.verdict === "pass" || (result.unaddressed_ratio || 0) <= 0.3
-              ? "passed"
-              : "verified",
-        });
+            this.repo.updateTask(task.id, {
+              verify_result: result,
+              status:
+                result.verdict === "pass" || (result.unaddressed_ratio || 0) <= 0.3
+                  ? "passed"
+                  : "verified",
+            });
 
-        if (
-          result.verdict === "needs_v3" &&
-          (result.unaddressed_ratio || 0) > 0.3 &&
-          !task.deliverable_v3
-        ) {
-          const worker = this.runtime.agentDirectory.get(task.worker_id);
-          if (worker) {
-            const unresolved = result.items
-              .filter(item => !item.addressed)
-              .map(item => `- ${item.point}: ${item.comment}`)
-              .join("\n");
+            if (
+              result.verdict === "needs_v3" &&
+              (result.unaddressed_ratio || 0) > 0.3 &&
+              !task.deliverable_v3
+            ) {
+              const worker = this.runtime.agentDirectory.get(task.worker_id);
+              if (worker) {
+                const unresolved = result.items
+                  .filter(item => !item.addressed)
+                  .map(item => `- ${item.point}: ${item.comment}`)
+                  .join("\n");
 
-            const v3 = await worker.invoke(
-              `Your v2 deliverable still leaves some feedback unresolved. Continue revising.
+                const v3 = await worker.invoke(
+                  `Your v2 deliverable still leaves some feedback unresolved. Continue revising.
 
 Unresolved feedback points:
 ${unresolved}
@@ -971,41 +1006,43 @@ Your v2 deliverable:
 ${task.deliverable_v2}
 
 Return a complete v3 deliverable.`,
-              undefined,
-              { workflowId, stage: "verify" }
-            );
+                  undefined,
+                  { workflowId, stage: "verify" }
+                );
 
-            this.repo.updateTask(task.id, {
-              deliverable_v3: v3,
-              version: 3,
-              status: "passed",
+                this.repo.updateTask(task.id, {
+                  deliverable_v3: v3,
+                  version: 3,
+                  status: "passed",
+                });
+              }
+            } else {
+              this.repo.updateTask(task.id, { status: "passed" });
+            }
+          } catch (err: any) {
+            this.repo.updateTask(task.id, { status: "passed" });
+            this.recordWorkflowIssue(workflowId, {
+              stage: "verify",
+              scope: "task",
+              severity: "warning",
+              taskId: task.id,
+              agentId: task.manager_id,
+              message: `Verification failed: ${err.message}`,
             });
+            if (this.isTemporaryLLMError(err)) {
+              llmOutageMessage = err.message;
+            }
           }
-        } else {
-          this.repo.updateTask(task.id, { status: "passed" });
-        }
-      } catch (err: any) {
-        this.repo.updateTask(task.id, { status: "passed" });
-        this.recordWorkflowIssue(workflowId, {
-          stage: "verify",
-          scope: "task",
-          severity: "warning",
-          taskId: task.id,
-          agentId: task.manager_id,
-          message: `Verification failed: ${err.message}`,
-        });
-        if (this.isTemporaryLLMError(err)) {
-          llmOutageMessage = err.message;
-        }
-      }
 
-      this.emit({
-        type: "agent_active",
-        agentId: task.manager_id,
-        action: "idle",
-        workflowId,
-      });
-    }
+          this.emit({
+            type: "agent_active",
+            agentId: task.manager_id,
+            action: "idle",
+            workflowId,
+          });
+        }
+      })
+    );
   }
 
   private async runSummary(workflowId: string): Promise<void> {
@@ -1026,44 +1063,42 @@ Return a complete v3 deliverable.`,
       report_markdown_path: string;
     }> = [];
 
-    let llmOutageMessage: string | null = null;
+    const summaryResults = await Promise.all(
+      (workflow.departments_involved || []).map(async deptId => {
+        const manager = this.runtime.agentDirectory.getManagerByDepartment(deptId);
+        if (!manager) {
+          return {
+            deptId,
+            summaryBlock: null as string | null,
+            report: null as (typeof departmentReports)[number] | null,
+          };
+        }
 
-    for (const deptId of workflow.departments_involved || []) {
-      const manager = this.runtime.agentDirectory.getManagerByDepartment(deptId);
-      if (!manager) continue;
+        this.emit({
+          type: "agent_active",
+          agentId: manager.config.id,
+          action: "summarizing",
+          workflowId,
+        });
 
-      if (llmOutageMessage) {
-        summaries.push(
-          `## ${deptId} Department\n\nSummary skipped after LLM degradation: ${llmOutageMessage}`
-        );
-        continue;
-      }
+        const deptTasks = this.repo
+          .getTasksByWorkflow(workflowId)
+          .filter(task => task.department === deptId);
 
-      this.emit({
-        type: "agent_active",
-        agentId: manager.config.id,
-        action: "summarizing",
-        workflowId,
-      });
-
-      const deptTasks = this.repo
-        .getTasksByWorkflow(workflowId)
-        .filter(task => task.department === deptId);
-
-      const taskResults = deptTasks
-        .map(
-          task =>
-            `Worker: ${task.worker_id}
+        const taskResults = deptTasks
+          .map(
+            task =>
+              `Worker: ${task.worker_id}
 Task: ${task.description}
 Score: ${task.total_score}/20
 Deliverable:
 ${bestDeliverable(task)}`
-        )
-        .join("\n\n---\n\n");
+          )
+          .join("\n\n---\n\n");
 
-      try {
-        const summary = await manager.invoke(
-          `Summarize your department's execution results for the CEO.
+        try {
+          const summary = await manager.invoke(
+            `Summarize your department's execution results for the CEO.
 
 Department task results:
 ${taskResults}
@@ -1073,65 +1108,78 @@ Cover:
 2. The most important outcomes
 3. Open issues or risks
 4. Recommended next actions`,
-          undefined,
-          { workflowId, stage: "summary" }
-        );
+            undefined,
+            { workflowId, stage: "summary" }
+          );
 
-        summaries.push(`## ${deptId} Department (${manager.config.name})\n\n${summary}`);
+          await this.runtime.messageBus.send(
+            manager.config.id,
+            "ceo",
+            summary,
+            workflowId,
+            "summary"
+          );
 
-        await this.runtime.messageBus.send(
-          manager.config.id,
-          "ceo",
-          summary,
-          workflowId,
-          "summary"
-        );
+          const departmentReport = this.runtime.reportRepo.buildDepartmentReport(
+            workflow,
+            {
+              id: manager.config.id,
+              name: manager.config.name,
+              department: deptId,
+            },
+            summary,
+            deptTasks
+          );
+          const savedReport = this.runtime.reportRepo.saveDepartmentReport(
+            departmentReport
+          );
 
-        const departmentReport = this.runtime.reportRepo.buildDepartmentReport(
-          workflow,
-          {
-            id: manager.config.id,
-            name: manager.config.name,
-            department: deptId,
-          },
-          summary,
-          deptTasks
-        );
-        const savedReport = this.runtime.reportRepo.saveDepartmentReport(
-          departmentReport
-        );
-        departmentReports.push({
-          manager_id: manager.config.id,
-          manager_name: manager.config.name,
-          department: deptId,
-          summary,
-          task_count: deptTasks.length,
-          average_score: departmentReport.stats.averageScore,
-          report_json_path: savedReport.jsonPath,
-          report_markdown_path: savedReport.markdownPath,
-        });
-      } catch (err: any) {
-        summaries.push(
-          `## ${deptId} Department\n\nSummary generation failed: ${err.message}`
-        );
-        this.recordWorkflowIssue(workflowId, {
-          stage: "summary",
-          scope: "agent",
-          severity: "warning",
-          agentId: manager.config.id,
-          message: `Department summary failed: ${err.message}`,
-        });
-        if (this.isTemporaryLLMError(err)) {
-          llmOutageMessage = err.message;
+          return {
+            deptId,
+            summaryBlock: `## ${deptId} Department (${manager.config.name})\n\n${summary}`,
+            report: {
+              manager_id: manager.config.id,
+              manager_name: manager.config.name,
+              department: deptId,
+              summary,
+              task_count: deptTasks.length,
+              average_score: departmentReport.stats.averageScore,
+              report_json_path: savedReport.jsonPath,
+              report_markdown_path: savedReport.markdownPath,
+            },
+          };
+        } catch (err: any) {
+          this.recordWorkflowIssue(workflowId, {
+            stage: "summary",
+            scope: "agent",
+            severity: "warning",
+            agentId: manager.config.id,
+            message: `Department summary failed: ${err.message}`,
+          });
+
+          return {
+            deptId,
+            summaryBlock: `## ${deptId} Department\n\nSummary generation failed: ${err.message}`,
+            report: null,
+          };
+        } finally {
+          this.emit({
+            type: "agent_active",
+            agentId: manager.config.id,
+            action: "idle",
+            workflowId,
+          });
         }
-      }
+      })
+    );
 
-      this.emit({
-        type: "agent_active",
-        agentId: manager.config.id,
-        action: "idle",
-        workflowId,
-      });
+    for (const result of summaryResults) {
+      if (result.summaryBlock) {
+        summaries.push(result.summaryBlock);
+      }
+      if (result.report) {
+        departmentReports.push(result.report);
+      }
     }
 
     this.repo.updateWorkflow(workflowId, {
