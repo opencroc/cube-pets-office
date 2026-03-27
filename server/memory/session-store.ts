@@ -97,12 +97,63 @@ function compactText(text: string, limit: number = 1200): string {
   return `${normalized.substring(0, limit)}...`;
 }
 
-function renderContextEntry(entry: SessionEntry): string {
+function normalizePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+const WORKFLOW_CONTEXT_RECENT_LIMIT = normalizePositiveInteger(
+  process.env.WORKFLOW_CONTEXT_RECENT_LIMIT,
+  12
+);
+const WORKFLOW_CONTEXT_EARLIER_PREVIEW_LIMIT = normalizePositiveInteger(
+  process.env.WORKFLOW_CONTEXT_EARLIER_PREVIEW_LIMIT,
+  6
+);
+const WORKFLOW_CONTEXT_ENTRY_CHAR_LIMIT = normalizePositiveInteger(
+  process.env.WORKFLOW_CONTEXT_ENTRY_CHAR_LIMIT,
+  320
+);
+const WORKFLOW_CONTEXT_TOTAL_CHAR_LIMIT = normalizePositiveInteger(
+  process.env.WORKFLOW_CONTEXT_TOTAL_CHAR_LIMIT,
+  6000
+);
+
+function renderContextEntry(
+  entry: SessionEntry,
+  contentLimit: number = 1200
+): string {
   const time = entry.timestamp;
   const stage = entry.stage || 'general';
   const direction = entry.direction ? ` ${entry.direction}` : '';
   const relation = entry.otherAgentId ? ` ${entry.otherAgentId}` : '';
-  return `[${time}] [${stage}] [${entry.type}${direction}${relation}] ${entry.content}`;
+  return `[${time}] [${stage}] [${entry.type}${direction}${relation}] ${compactText(entry.content, contentLimit)}`;
+}
+
+function buildWorkflowTranscript(entries: SessionEntry[]): string {
+  const relevantEntries = entries.filter((entry) => entry.type !== 'llm_prompt');
+  const recentEntries = relevantEntries.slice(-WORKFLOW_CONTEXT_RECENT_LIMIT);
+  const earlierEntries = relevantEntries.slice(
+    0,
+    Math.max(0, relevantEntries.length - recentEntries.length)
+  );
+  const earlierPreview = earlierEntries
+    .slice(-WORKFLOW_CONTEXT_EARLIER_PREVIEW_LIMIT)
+    .map((entry) => `- ${entry.stage || 'general'} / ${entry.type}: ${entry.preview}`)
+    .join('\n');
+  const recentTranscript = recentEntries
+    .map((entry) => renderContextEntry(entry, WORKFLOW_CONTEXT_ENTRY_CHAR_LIMIT))
+    .join('\n\n');
+  const combined = [
+    earlierEntries.length > 0
+      ? `Earlier key context (${earlierEntries.length} items, summarized):\n${earlierPreview}`
+      : '',
+    recentTranscript ? `Most recent key context (${recentEntries.length} items):\n${recentTranscript}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  return compactText(combined, WORKFLOW_CONTEXT_TOTAL_CHAR_LIMIT);
 }
 
 class SessionStore {
@@ -237,7 +288,7 @@ class SessionStore {
     if (workflowId) {
       const workflowEntries = this.getWorkflowEntries(agentId, workflowId);
       if (workflowEntries.length > 0) {
-        const transcript = workflowEntries.map((entry) => renderContextEntry(entry)).join('\n\n');
+        const transcript = buildWorkflowTranscript(workflowEntries);
         sections.push(`以下是你在当前 workflow 中的完整上下文记录，请延续已有判断、承诺和事实，不要丢失前文：\n${transcript}`);
       }
     } else {

@@ -55,11 +55,11 @@ export function getAIConfig(): AIConfig {
     modelReasoningEffort:
       process.env.OPENAI_REASONING_EFFORT ||
       process.env.LLM_REASONING_EFFORT ||
-      'high',
+      'medium',
     maxContext: normalizeNumber(process.env.LLM_MAX_CONTEXT, 1_000_000),
     providerName: deriveProviderName(baseUrl),
     wireApi: normalizeWireApi(process.env.OPENAI_WIRE_API || process.env.LLM_WIRE_API),
-    timeoutMs: normalizeNumber(process.env.OPENAI_TIMEOUT_MS || process.env.LLM_TIMEOUT_MS, 45000),
+    timeoutMs: normalizeNumber(process.env.OPENAI_TIMEOUT_MS || process.env.LLM_TIMEOUT_MS, 90000),
     stream: normalizeBoolean(process.env.OPENAI_STREAM || process.env.LLM_STREAM, true),
     chatThinkingType:
       process.env.OPENAI_CHAT_THINKING_TYPE ||
