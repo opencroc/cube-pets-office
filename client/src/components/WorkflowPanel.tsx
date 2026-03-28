@@ -1,17 +1,22 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   BarChart3,
   BookOpenText,
   Brain,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Download,
+  FileText,
   History,
   Loader2,
   Monitor,
   Network,
   Paperclip,
+  PanelRight,
   Search,
   Send,
   Server,
@@ -31,6 +36,7 @@ import {
   type AgentInfo,
   type AgentMemoryEntry,
   type HeartbeatReportInfo,
+  type MessageInfo,
   type PanelView,
   type StageInfo,
   type TaskInfo,
@@ -286,6 +292,112 @@ function taskStatusIcon(status: string) {
     default:
       return <Clock className="h-3.5 w-3.5 text-slate-400" />;
   }
+}
+
+type RoleProgressStatus = 'blocked' | 'active' | 'review' | 'done' | 'idle';
+
+function summarizeText(value: string | null | undefined, fallback: string, maxLength = 72) {
+  const normalized = (value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trimEnd()}...` : normalized;
+}
+
+function getTaskPrimaryText(task: TaskInfo) {
+  return task.deliverable_v3 || task.deliverable_v2 || task.deliverable || '';
+}
+
+function getTaskDetailBlocks(task: TaskInfo) {
+  const blocks: Array<{ key: string; label: string; content: string | null }> = [
+    { key: 'deliverable', label: 'Deliverable', content: getTaskPrimaryText(task) },
+    { key: 'manager_feedback', label: 'Manager feedback', content: task.manager_feedback },
+    { key: 'meta_audit_feedback', label: 'Audit feedback', content: task.meta_audit_feedback },
+  ];
+
+  return blocks.filter(block => block.content && block.content.trim().length > 0);
+}
+
+function getTaskRank(status: string) {
+  const rank: Record<string, number> = {
+    executing: 0,
+    revising: 0,
+    submitted: 1,
+    reviewed: 2,
+    audited: 2,
+    assigned: 3,
+    verified: 4,
+    passed: 4,
+    failed: 5,
+  };
+
+  return rank[status] ?? 6;
+}
+
+function getRoleSummaryStatus(tasks: TaskInfo[]): RoleProgressStatus {
+  const statuses = tasks.map(task => task.status);
+
+  if (statuses.some(status => status === 'failed' || status === 'revising')) {
+    return 'blocked';
+  }
+  if (statuses.some(status => status === 'executing')) {
+    return 'active';
+  }
+  if (statuses.some(status => status === 'submitted' || status === 'reviewed' || status === 'audited')) {
+    return 'review';
+  }
+  if (statuses.every(status => status === 'verified' || status === 'passed')) {
+    return 'done';
+  }
+
+  return 'idle';
+}
+
+function getRoleStatusLabel(locale: string, status: RoleProgressStatus) {
+  switch (status) {
+    case 'blocked':
+      return t(locale, '返工 / 阻塞', 'Blocked / revising');
+    case 'active':
+      return t(locale, '执行中', 'In progress');
+    case 'review':
+      return t(locale, '等待评审', 'Awaiting review');
+    case 'done':
+      return t(locale, '已完成', 'Completed');
+    default:
+      return t(locale, '待命', 'Idle');
+  }
+}
+
+function getRoleStatusClass(status: RoleProgressStatus) {
+  switch (status) {
+    case 'blocked':
+      return 'bg-amber-100 text-amber-800';
+    case 'active':
+      return 'bg-blue-100 text-blue-700';
+    case 'review':
+      return 'bg-violet-100 text-violet-700';
+    case 'done':
+      return 'bg-emerald-100 text-emerald-700';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+}
+
+function getTaskCompletedCount(tasks: TaskInfo[]) {
+  return tasks.filter(task => task.status === 'verified' || task.status === 'passed').length;
+}
+
+function getLatestRoleTimestamp(messages: MessageInfo[], roleId: string) {
+  const related = messages
+    .filter(message => message.from_agent === roleId || message.to_agent === roleId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return related[0]?.created_at || null;
+}
+
+function getLatestRoleMessages(messages: MessageInfo[], roleId: string, limit = 3) {
+  return messages
+    .filter(message => message.from_agent === roleId || message.to_agent === roleId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
 }
 
 function getMemoryTypeLabel(
@@ -698,7 +810,7 @@ function OrgView() {
   );
 }
 
-function ProgressView() {
+function ProgressViewLegacy() {
   const { copy } = useI18n();
   const locale = useAppStore(state => state.locale);
   const fmt = useFmt();
@@ -790,6 +902,533 @@ function ProgressView() {
         <div>
           <p className="mb-2 text-[11px] font-semibold text-[#8B7355]">{copy.workflow.progress.messageFlow}</p>
           {messages.length === 0 ? <div className="rounded-2xl bg-[#F8F4F0] px-4 py-6 text-center text-[11px] text-[#8B7355]">{copy.workflow.progress.noMessages}</div> : <div className="space-y-2">{messages.slice(-10).map(message => <div key={message.id} className="rounded-xl border border-[#E8DDD0] bg-white/78 p-3"><div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#8B7355]"><span>{getNodeName(message.from_agent, nodeMap)} → {getNodeName(message.to_agent, nodeMap)}</span><span>{fmt(message.created_at)}</span></div><p className="mt-1 text-[10px] text-[#B0A090]">{getDynamicStageLabel(locale, message.stage, copy.workflow.stages[message.stage as keyof typeof copy.workflow.stages] || message.stage)}</p><p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-[#5A4A3A]">{message.content}</p></div>)}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProgressView() {
+  const { copy } = useI18n();
+  const locale = useAppStore(state => state.locale);
+  const fmt = useFmt();
+  const { currentWorkflow, tasks, messages, stages, downloadWorkflowReport, downloadDepartmentReport } = useWorkflowStore();
+  const [expandedRoleKeys, setExpandedRoleKeys] = useState<string[]>([]);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  const organization = getOrganization(currentWorkflow);
+  const attachments = useMemo(
+    () => normalizeWorkflowAttachments(currentWorkflow?.results?.input?.attachments),
+    [currentWorkflow]
+  );
+  const nodeMap = useMemo(() => getNodeMap(organization), [organization]);
+
+  useEffect(() => {
+    setExpandedRoleKeys([]);
+    setShowAllEvents(false);
+    setIsContextOpen(false);
+  }, [currentWorkflow?.id]);
+
+  const progressState = useMemo(() => {
+    const groupedByDepartment = Object.entries(
+      tasks.reduce<Record<string, TaskInfo[]>>((acc, task) => {
+        (acc[task.department] ||= []).push(task);
+        return acc;
+      }, {})
+    );
+
+    const departmentSummaries = groupedByDepartment
+      .map(([department, items]) => {
+        const managerId = items[0]?.manager_id || '';
+
+        const buildRoleSummary = (
+          roleId: string,
+          roleKind: 'manager' | 'worker',
+          roleTasks: TaskInfo[]
+        ) => {
+          const sortedTasks = [...roleTasks].sort(
+            (a, b) => getTaskRank(a.status) - getTaskRank(b.status) || a.id - b.id
+          );
+          const focusTask = sortedTasks[0];
+          const summarySource =
+            getTaskPrimaryText(focusTask) ||
+            focusTask.manager_feedback ||
+            focusTask.meta_audit_feedback;
+
+          return {
+            key: `${roleKind}:${roleId}`,
+            id: roleId,
+            roleKind,
+            name: getNodeName(roleId, nodeMap, roleId),
+            status: getRoleSummaryStatus(sortedTasks),
+            currentTask: summarizeText(
+              focusTask?.description,
+              t(locale, '等待分配任务', 'Waiting for assignment'),
+              52
+            ),
+            summary: summarizeText(
+              summarySource,
+              t(locale, '暂无结果摘要', 'No summary yet'),
+              78
+            ),
+            updatedAt:
+              getLatestRoleTimestamp(messages, roleId) ||
+              currentWorkflow?.started_at ||
+              currentWorkflow?.created_at ||
+              null,
+            tasks: sortedTasks,
+            messages: getLatestRoleMessages(messages, roleId, 3),
+          };
+        };
+
+        const workerSummaries = Object.entries(
+          items.reduce<Record<string, TaskInfo[]>>((acc, task) => {
+            (acc[task.worker_id] ||= []).push(task);
+            return acc;
+          }, {})
+        )
+          .map(([workerId, workerTasks]) => buildRoleSummary(workerId, 'worker', workerTasks))
+          .sort((a, b) => getTaskRank(a.tasks[0]?.status || '') - getTaskRank(b.tasks[0]?.status || ''));
+
+        const managerSummary = managerId
+          ? buildRoleSummary(managerId, 'manager', items)
+          : null;
+
+        return {
+          department,
+          managerId,
+          completedTasks: getTaskCompletedCount(items),
+          totalTasks: items.length,
+          roles: managerSummary ? [managerSummary, ...workerSummaries] : workerSummaries,
+        };
+      })
+      .sort((a, b) => {
+        const aPriority = a.roles.some(role => role.status === 'blocked')
+          ? 0
+          : a.roles.some(role => role.status === 'active')
+            ? 1
+            : 2;
+        const bPriority = b.roles.some(role => role.status === 'blocked')
+          ? 0
+          : b.roles.some(role => role.status === 'active')
+            ? 1
+            : 2;
+
+        return aPriority - bPriority || a.department.localeCompare(b.department, locale);
+      });
+
+    const roleSummaries = departmentSummaries.flatMap(item => item.roles);
+
+    return {
+      departmentSummaries,
+      roleSummaries,
+      completedTasks: getTaskCompletedCount(tasks),
+      blockedRoles: roleSummaries.filter(role => role.status === 'blocked'),
+      activeRoles: roleSummaries.filter(role => role.status === 'active'),
+      reviewRoles: roleSummaries.filter(role => role.status === 'review'),
+      queuedTasks: tasks.filter(task => task.status === 'assigned').length,
+      keyEvents: [...messages].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    };
+  }, [currentWorkflow?.created_at, currentWorkflow?.started_at, locale, messages, nodeMap, tasks]);
+
+  if (!currentWorkflow) {
+    return <EmptyState title={copy.workflow.progress.emptyTitle} description={copy.workflow.progress.emptyDescription} />;
+  }
+
+  const currentStageLabel = getDynamicStageLabel(
+    locale,
+    currentWorkflow.current_stage || 'direction',
+    copy.workflow.stages[(currentWorkflow.current_stage || 'direction') as keyof typeof copy.workflow.stages] ||
+      currentWorkflow.current_stage ||
+      copy.common.unavailable
+  );
+  const activeRoleNames =
+    progressState.activeRoles.length > 0
+      ? progressState.activeRoles.slice(0, 2).map(role => role.name).join(' / ')
+      : t(locale, '当前无活跃角色', 'No active roles right now');
+  const blockerSummary =
+    progressState.blockedRoles.length > 0
+      ? t(
+          locale,
+          `${progressState.blockedRoles.length} 个角色返工或阻塞`,
+          `${progressState.blockedRoles.length} roles are blocked or revising`
+        )
+      : progressState.reviewRoles.length > 0
+        ? t(
+            locale,
+            `${progressState.reviewRoles.length} 个角色等待评审`,
+            `${progressState.reviewRoles.length} roles are awaiting review`
+          )
+        : progressState.queuedTasks > 0
+          ? t(
+              locale,
+              `${progressState.queuedTasks} 个任务排队中`,
+              `${progressState.queuedTasks} tasks are queued`
+            )
+          : t(locale, '当前无明显阻塞', 'No obvious blockers');
+  const visibleEvents = showAllEvents
+    ? progressState.keyEvents.slice(0, 10)
+    : progressState.keyEvents.slice(0, 3);
+
+  const toggleRole = (key: string) => {
+    setExpandedRoleKeys(prev =>
+      prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]
+    );
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <Section
+        title={copy.workflow.progress.overview}
+        description={t(
+          locale,
+          '默认先看总进度，再看角色摘要；完整交付、反馈和消息都收进展开层。',
+          'Start with the overall progress, then scan role summaries. Full details only open on demand.'
+        )}
+      />
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
+        <div className="rounded-2xl border border-[#E8DDD0] bg-white/85 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#B08F72]">
+                {t(locale, '当前执行', 'Current run')}
+              </p>
+              <p className="mt-1 text-sm font-semibold leading-6 text-[#3A2A1A]">
+                {summarizeText(currentWorkflow.directive, copy.common.unavailable, 120)}
+              </p>
+              <p className="mt-2 text-[11px] text-[#8B7355]">
+                {copy.workflow.progress.startedAt}: {fmt(currentWorkflow.started_at || currentWorkflow.created_at)}
+              </p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${wfBadge[currentWorkflow.status] || wfBadge.pending}`}>
+              {copy.workflow.statuses.workflow[currentWorkflow.status as keyof typeof copy.workflow.statuses.workflow] || currentWorkflow.status}
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-2xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+              <div className="flex items-center gap-2 text-[#8B7355]">
+                <BarChart3 className="h-3.5 w-3.5" />
+                <p className="text-[10px] font-semibold">{t(locale, '当前阶段', 'Current stage')}</p>
+              </div>
+              <p className="mt-2 text-[13px] font-semibold text-[#3A2A1A]">{currentStageLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+              <div className="flex items-center gap-2 text-[#8B7355]">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <p className="text-[10px] font-semibold">{t(locale, '总体进度', 'Overall progress')}</p>
+              </div>
+              <p className="mt-2 text-[13px] font-semibold text-[#3A2A1A]">
+                {progressState.completedTasks} / {tasks.length || 0} {t(locale, '任务完成', 'tasks completed')}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+              <div className="flex items-center gap-2 text-[#8B7355]">
+                <Zap className="h-3.5 w-3.5" />
+                <p className="text-[10px] font-semibold">{t(locale, '当前活跃角色', 'Active roles')}</p>
+              </div>
+              <p className="mt-2 text-[13px] font-semibold text-[#3A2A1A]">{progressState.activeRoles.length}</p>
+              <p className="mt-1 text-[10px] leading-5 text-[#8B7355]">{activeRoleNames}</p>
+            </div>
+            <div className="rounded-2xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+              <div className="flex items-center gap-2 text-[#8B7355]">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <p className="text-[10px] font-semibold">{t(locale, '阻塞与等待', 'Blockers')}</p>
+              </div>
+              <p className="mt-2 text-[13px] font-semibold text-[#3A2A1A]">{progressState.blockedRoles.length}</p>
+              <p className="mt-1 text-[10px] leading-5 text-[#8B7355]">{blockerSummary}</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-[#8B7355]">{copy.workflow.progress.stageProgress}</p>
+              <span className="text-[10px] text-[#B08F72]">
+                {progressState.roleSummaries.length} {t(locale, '个角色摘要', 'role summaries')}
+              </span>
+            </div>
+            <StageBar stages={stages} current={currentWorkflow.current_stage} />
+          </div>
+
+          {currentWorkflow.status === 'failed' ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
+              {currentWorkflow.results?.last_error || copy.common.unavailable}
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={() => void downloadWorkflowReport(currentWorkflow.id, 'json')} className="inline-flex items-center gap-1 rounded-xl bg-[#F0E8E0] px-3 py-2 text-xs font-semibold text-[#5B4837]"><Download className="h-3.5 w-3.5" />{copy.workflow.progress.workflowReport} · {copy.common.json}</button>
+            <button onClick={() => void downloadWorkflowReport(currentWorkflow.id, 'md')} className="inline-flex items-center gap-1 rounded-xl bg-[#F0E8E0] px-3 py-2 text-xs font-semibold text-[#5B4837]"><Download className="h-3.5 w-3.5" />{copy.workflow.progress.workflowReport} · {copy.common.markdown}</button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-[#E8DDD0] bg-white/82 p-3">
+          <div className="mb-3">
+            <p className="text-sm font-semibold text-[#3A2A1A]">{t(locale, '角色执行摘要', 'Role execution summary')}</p>
+            <p className="text-[10px] leading-5 text-[#8B7355]">
+              {t(
+                locale,
+                '每个角色默认只显示一行摘要，点开后再看完整交付、反馈和相关事件。',
+                'Each role stays compact by default. Open one to inspect the full deliverable, feedback, and related events.'
+              )}
+            </p>
+          </div>
+
+          {progressState.departmentSummaries.length === 0 ? (
+            <div className="rounded-2xl bg-[#F8F4F0] px-4 py-6 text-center text-[11px] text-[#8B7355]">
+              {copy.workflow.progress.noTasks}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {progressState.departmentSummaries.map(group => (
+                <div key={group.department} className="rounded-2xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#3A2A1A]">
+                        {copy.workflow.departments[group.department as keyof typeof copy.workflow.departments] || group.department}
+                      </p>
+                      <p className="text-[10px] text-[#8B7355]">
+                        {group.completedTasks} / {group.totalTasks} {t(locale, '任务完成', 'tasks completed')}
+                      </p>
+                    </div>
+                    {group.managerId ? (
+                      <button onClick={() => void downloadDepartmentReport(currentWorkflow.id, group.managerId, 'md')} className="inline-flex items-center gap-1 rounded-lg bg-[#F0E8E0] px-2.5 py-1 text-[10px] font-semibold text-[#5B4837]"><Download className="h-3 w-3" />{copy.workflow.progress.departmentReport}</button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {group.roles.map(role => {
+                      const isExpanded = expandedRoleKeys.includes(role.key);
+                      return (
+                        <div key={role.key} className="rounded-xl border border-[#E8DDD0] bg-white/90">
+                          <button
+                            type="button"
+                            onClick={() => toggleRole(role.key)}
+                            className="flex w-full items-start gap-3 px-3 py-3 text-left"
+                          >
+                            <div className="mt-0.5">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-[#B08F72]" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-[#B08F72]" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-[12px] font-semibold text-[#3A2A1A]">{role.name}</p>
+                                <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${getRoleStatusClass(role.status)}`}>
+                                  {getRoleStatusLabel(locale, role.status)}
+                                </span>
+                                <Pill>{role.roleKind === 'manager' ? t(locale, '经理', 'Manager') : t(locale, '执行者', 'Worker')}</Pill>
+                              </div>
+                              <p className="mt-1 text-[11px] font-medium text-[#5A4A3A]">{role.currentTask}</p>
+                              <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-[#8B7355]">
+                                <span>{t(locale, '最近更新', 'Latest update')}: {fmt(role.updatedAt)}</span>
+                                <span>{role.tasks.length} {t(locale, '项任务', 'tasks')}</span>
+                              </div>
+                              <p className="mt-1 text-[10px] leading-5 text-[#8B7355]">{role.summary}</p>
+                            </div>
+                          </button>
+
+                          {isExpanded ? (
+                            <div className="border-t border-[#F0E8E0] bg-[#FFFCF8] px-3 py-3">
+                              <div className="space-y-3">
+                                {role.tasks.map(task => {
+                                  const blocks = getTaskDetailBlocks(task);
+                                  return (
+                                    <div key={task.id} className="rounded-xl border border-[#EEE1D3] bg-white px-3 py-3">
+                                      <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                            {taskStatusIcon(task.status)}
+                                            <p className="text-[12px] font-semibold text-[#3A2A1A]">{task.description}</p>
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-[#8B7355]">
+                                            <span>{t(locale, '执行者', 'Worker')}: {getNodeName(task.worker_id, nodeMap)}</span>
+                                            <span>{t(locale, '版本', 'Version')} {task.version}</span>
+                                            {task.total_score !== null ? <span>{copy.workflow.progress.score}: {task.total_score}/20</span> : null}
+                                          </div>
+                                        </div>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${taskBadge[task.status] || taskBadge.assigned}`}>
+                                          {copy.workflow.statuses.task[task.status as keyof typeof copy.workflow.statuses.task] || task.status}
+                                        </span>
+                                      </div>
+
+                                      {blocks.length > 0 ? (
+                                        <div className="mt-3 space-y-2">
+                                          {blocks.map(block => (
+                                            <div key={block.key} className="rounded-lg bg-[#F8F4F0] px-3 py-2">
+                                              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#B08F72]">
+                                                {block.key === 'deliverable'
+                                                  ? t(locale, '交付内容', 'Deliverable')
+                                                  : block.key === 'manager_feedback'
+                                                    ? t(locale, '经理反馈', 'Manager feedback')
+                                                    : t(locale, '审计反馈', 'Audit feedback')}
+                                              </p>
+                                              <p className="mt-1 whitespace-pre-wrap text-[10px] leading-5 text-[#5A4A3A]">
+                                                {block.content}
+                                              </p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="mt-3 text-[10px] text-[#8B7355]">
+                                          {t(locale, '当前还没有可展开的详细内容。', 'There is no detailed content to expand yet.')}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {role.messages.length > 0 ? (
+                                  <div className="rounded-xl border border-[#EEE1D3] bg-white px-3 py-3">
+                                    <p className="text-[11px] font-semibold text-[#3A2A1A]">
+                                      {t(locale, '相关事件', 'Related events')}
+                                    </p>
+                                    <div className="mt-2 space-y-2">
+                                      {role.messages.map(message => (
+                                        <div key={message.id} className="rounded-lg bg-[#F8F4F0] px-3 py-2">
+                                          <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#8B7355]">
+                                            <span>{getNodeName(message.from_agent, nodeMap)} → {getNodeName(message.to_agent, nodeMap)}</span>
+                                            <span>{fmt(message.created_at)}</span>
+                                          </div>
+                                          <p className="mt-1 text-[10px] leading-5 text-[#5A4A3A]">
+                                            {summarizeText(message.content, copy.common.unavailable, 180)}
+                                          </p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#E8DDD0] bg-white/82 p-3">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[#B08F72]" />
+              <div>
+                <p className="text-sm font-semibold text-[#3A2A1A]">{t(locale, '关键事件', 'Key events')}</p>
+                <p className="text-[10px] leading-5 text-[#8B7355]">
+                  {t(locale, '默认只显示最近 3 条，避免消息流把进度信息淹没。', 'Only the most recent events are shown by default so progress stays readable.')}
+                </p>
+              </div>
+            </div>
+            {progressState.keyEvents.length > 3 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllEvents(prev => !prev)}
+                className="rounded-lg bg-[#F0E8E0] px-2.5 py-1 text-[10px] font-semibold text-[#5B4837]"
+              >
+                {showAllEvents ? t(locale, '收起', 'Show less') : t(locale, '查看全部事件', 'View all events')}
+              </button>
+            ) : null}
+          </div>
+
+          {visibleEvents.length === 0 ? (
+            <div className="rounded-2xl bg-[#F8F4F0] px-4 py-6 text-center text-[11px] text-[#8B7355]">
+              {copy.workflow.progress.noMessages}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {visibleEvents.map(message => (
+                <div key={message.id} className="rounded-xl border border-[#EEE1D3] bg-[#FFFCF8] px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#8B7355]">
+                    <span>{getNodeName(message.from_agent, nodeMap)} → {getNodeName(message.to_agent, nodeMap)}</span>
+                    <span>{fmt(message.created_at)}</span>
+                  </div>
+                  <p className="mt-1 text-[10px] text-[#B08F72]">
+                    {getDynamicStageLabel(
+                      locale,
+                      message.stage,
+                      copy.workflow.stages[message.stage as keyof typeof copy.workflow.stages] || message.stage
+                    )}
+                  </p>
+                  <p className="mt-2 text-[11px] leading-5 text-[#5A4A3A]">
+                    {summarizeText(message.content, copy.common.unavailable, 180)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[#E8DDD0] bg-white/82 p-3">
+          <button
+            type="button"
+            onClick={() => setIsContextOpen(prev => !prev)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <PanelRight className="h-4 w-4 text-[#B08F72]" />
+              <div>
+                <p className="text-sm font-semibold text-[#3A2A1A]">{t(locale, '输入与上下文', 'Input and context')}</p>
+                <p className="text-[10px] leading-5 text-[#8B7355]">
+                  {t(locale, '附件和组织推理保留，但默认折叠，避免跟执行进度抢层级。', 'Attachments and organization context stay available, but collapsed by default.')}
+                </p>
+              </div>
+            </div>
+            {isContextOpen ? <ChevronDown className="h-4 w-4 text-[#B08F72]" /> : <ChevronRight className="h-4 w-4 text-[#B08F72]" />}
+          </button>
+
+          {isContextOpen ? (
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-[#EEE1D3] bg-[#FFFCF8] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-[#3A2A1A]">{t(locale, '输入附件', 'Input attachments')}</p>
+                  <Pill>{attachments.length}</Pill>
+                </div>
+                {attachments.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {attachments.map(attachment => (
+                      <div key={attachment.id} className="rounded-lg bg-white px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[11px] font-medium text-[#3A2A1A]">{attachment.name}</p>
+                          <div className="flex flex-wrap gap-2 text-[9px] text-[#8B7355]">
+                            <Pill>{formatAttachmentSize(attachment.size)}</Pill>
+                            <Pill>{getAttachmentStatusLabel(locale, attachment)}</Pill>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[10px] text-[#8B7355]">{t(locale, '当前没有输入附件。', 'There are no input attachments for this workflow.')}</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-indigo-900">{t(locale, '组织摘要', 'Organization summary')}</p>
+                  {organization ? <Pill>{organization.departments.length} {t(locale, '部门', 'departments')}</Pill> : null}
+                </div>
+                {organization ? (
+                  <>
+                    <p className="mt-2 text-[11px] leading-5 text-indigo-900">
+                      {t(locale, '当前组织', 'Current org')}: {organization.departments.length} {t(locale, '部门', 'departments')} / {organization.nodes.length} {t(locale, '节点', 'nodes')} / {organization.taskProfile}
+                    </p>
+                    <p className="mt-2 text-[10px] leading-5 text-indigo-800">
+                      {summarizeText(organization.reasoning, copy.common.unavailable, 180)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-[10px] text-indigo-800">{t(locale, '当前还没有组织生成结果。', 'No organization summary is available yet.')}</p>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

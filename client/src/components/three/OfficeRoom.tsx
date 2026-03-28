@@ -188,56 +188,9 @@ function Walls() {
         <meshStandardMaterial color="#AE9881" roughness={1} transparent opacity={0.64} />
       </mesh>
 
-      {[-5.1, 0, 5.1].map((x, index) => (
-        <FurnitureModel
-          key={`paneling-${index}`}
-          url={FURNITURE_MODELS.paneling}
-          position={[x, 0, -4.78]}
-          scale={1.25}
-        />
-      ))}
-
       <FurnitureModel url={FURNITURE_MODELS.wallCorner} position={[-7.72, 0, -4.82]} rotation={[0, Math.PI / 2, 0]} scale={1.08} />
       <FurnitureModel url={FURNITURE_MODELS.wallCornerRond} position={[7.72, 0, -4.82]} rotation={[0, Math.PI, 0]} scale={1.08} />
 
-      <FurnitureModel url={FURNITURE_MODELS.wallHalf} position={[-4.7, 0, -4.78]} scale={1.02} />
-      <FurnitureModel url={FURNITURE_MODELS.wallHalf} position={[4.7, 0, -4.78]} scale={1.02} />
-
-    </group>
-  );
-}
-
-function WindowStrip() {
-  return (
-    <group position={[-7.65, 1.68, -1.2]}>
-      {[-2.6, 0, 2.6].map((offset) => (
-        <group key={offset} position={[0, 0, offset]}>
-          <mesh rotation={[0, Math.PI / 2, 0]}>
-            <boxGeometry args={[2.1, 1.55, 0.08]} />
-            <meshStandardMaterial color="#D9CDBC" roughness={0.7} />
-          </mesh>
-          <mesh rotation={[0, Math.PI / 2, 0]} position={[-0.05, 0, 0]}>
-            <boxGeometry args={[2.02, 1.46, 0.03]} />
-            <meshStandardMaterial color="#EEE2D2" roughness={0.78} />
-          </mesh>
-          <mesh rotation={[0, Math.PI / 2, 0]} position={[-0.08, 0, 0]}>
-            <planeGeometry args={[1.9, 1.36]} />
-            <meshBasicMaterial color="#F4F9FF" transparent opacity={0.24} />
-          </mesh>
-          <mesh rotation={[0, Math.PI / 2, 0]} position={[0.02, 0, 0]}>
-            <planeGeometry args={[1.86, 1.32]} />
-            <meshStandardMaterial
-              color="#B6DBF8"
-              transparent
-              opacity={0.12}
-              roughness={0.18}
-              metalness={0.02}
-            />
-          </mesh>
-        </group>
-      ))}
-
-      <pointLight position={[0.65, 0.7, 0]} intensity={0.52} color="#FFF1D4" distance={9.5} decay={1.8} />
     </group>
   );
 }
@@ -268,16 +221,10 @@ function ArchitecturalAccents() {
 
       <FurnitureModel
         url={FURNITURE_MODELS.lampWall}
-        position={[-1.9, 1.08, -4.72]}
+        position={[0, 1.08, -4.72]}
         scale={1.05}
       />
-      <FurnitureModel
-        url={FURNITURE_MODELS.lampWall}
-        position={[1.9, 1.08, -4.72]}
-        scale={1.05}
-      />
-      <pointLight position={[-1.9, 1.22, -4.4]} intensity={0.22} color="#FFDDB0" distance={3.2} decay={2} />
-      <pointLight position={[1.9, 1.22, -4.4]} intensity={0.22} color="#FFDDB0" distance={3.2} decay={2} />
+      <pointLight position={[0, 1.22, -4.4]} intensity={0.18} color="#FFDDB0" distance={3} decay={2} />
     </group>
   );
 }
@@ -286,21 +233,19 @@ function CorkBoard() {
   return (
     <group position={[0, 2.02, -4.72]}>
       <mesh>
-        <boxGeometry args={[3.4, 1.45, 0.06]} />
+        <boxGeometry args={[2.7, 1.16, 0.06]} />
         <meshStandardMaterial color="#C4956A" roughness={0.95} />
       </mesh>
       <mesh position={[0, 0, 0.03]}>
-        <boxGeometry args={[3.55, 1.58, 0.03]} />
+        <boxGeometry args={[2.86, 1.29, 0.03]} />
         <meshStandardMaterial color="#8B6914" roughness={0.7} />
       </mesh>
       {[
-        { pos: [-1.0, 0.2, 0.05] as [number, number, number], color: '#FFE4B5', rot: 0.04 },
-        { pos: [-0.2, -0.22, 0.05] as [number, number, number], color: '#E8F5E9', rot: -0.1 },
-        { pos: [0.7, 0.1, 0.05] as [number, number, number], color: '#FFF3E0', rot: 0.08 },
-        { pos: [1.15, -0.15, 0.05] as [number, number, number], color: '#E3F2FD', rot: -0.04 },
+        { pos: [-0.62, 0.12, 0.05] as [number, number, number], color: '#FFE4B5', rot: 0.04 },
+        { pos: [0.54, -0.08, 0.05] as [number, number, number], color: '#E3F2FD', rot: -0.04 },
       ].map((note, index) => (
         <mesh key={index} position={note.pos} rotation={[0, 0, note.rot]}>
-          <planeGeometry args={[0.62, 0.45]} />
+          <planeGeometry args={[0.54, 0.4]} />
           <meshStandardMaterial color={note.color} roughness={0.9} />
         </mesh>
       ))}
@@ -824,7 +769,6 @@ export function OfficeRoom() {
     <group>
       <Floor />
       <Walls />
-      <WindowStrip />
       <ArchitecturalAccents />
       <WallBrandPlaque />
       <CorkBoard />
