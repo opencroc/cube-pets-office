@@ -115,7 +115,8 @@
 - [x] `shared/mission/**`、`shared/executor/**`、任务路由、executor 参考实现、brain dispatch、Feishu bridge、任务宇宙页面和总集成入口都已进入主线。
 - [x] `.env.example`、README、mission smoke 脚本与总集成入口文档已补齐。
 - [x] `npm run check` 已在合并后通过。
-- [x] 本地 `main` 已完成收口并准备推送远端。
+- [x] 本地 `main` 已推送到 `origin/main`。
+- [x] 已合并的本地并行 worktree（`0 / A / B / C / D / E / F`）已删除，只保留主仓继续开发。
 - [ ] mission smoke 脚本已落地，但尚未在本轮文档更新时记录完整服务器实机验证结果。
 
 ## 并行改造分工（2026-03-28：Cube Brain + Docker 执行层）
