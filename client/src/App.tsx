@@ -1,12 +1,13 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Router as WouterRouter, Switch } from "wouter";
-import { useEffect } from 'react';
+import { Route, Router as WouterRouter, Switch, useLocation } from "wouter";
+import { useEffect } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { useAppStore } from './lib/store';
+import { useAppStore } from "./lib/store";
 import Home from "./pages/Home";
+import { TaskDetailPage, TasksPage } from "./pages/tasks";
 
 const routerBase =
   import.meta.env.BASE_URL === "/"
@@ -17,9 +18,30 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/tasks"}>
+        {() => <TasksPage />}
+      </Route>
+      <Route path={"/tasks/:taskId"}>
+        {params => <TaskDetailRoute taskId={params.taskId} />}
+      </Route>
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
+  );
+}
+
+function TaskDetailRoute({
+  taskId,
+}: {
+  taskId?: string;
+}) {
+  const [, setLocation] = useLocation();
+
+  return (
+    <TaskDetailPage
+      taskId={taskId || null}
+      onBack={() => setLocation("/tasks")}
+    />
   );
 }
 

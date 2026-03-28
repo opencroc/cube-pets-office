@@ -198,6 +198,8 @@ Pages 版本特性：
 - `npm run build`：构建正常生产版本和服务端产物
 - `npm run build:pages`：构建 GitHub Pages 静态产物
 - `npm run check`：TypeScript 类型检查
+- `node scripts/mission-integration-smoke.mjs`：启动 fake Feishu API + mission server + lobster executor，验证 relay ACK / progress / done / failed、executor 回调回放、`/api/tasks` 与 mission Socket 闭环
+- `node scripts/mission-restart-smoke.mjs`：验证 mission 快照在服务重启后的失败恢复路径
 
 ## 主要 API
 
@@ -207,6 +209,35 @@ Pages 版本特性：
 - `GET /api/agents`：获取当前 Agent / 节点信息
 - `GET /api/config/ai`：查看当前 AI 配置来源与运行参数
 - `POST /api/chat`：统一的服务端聊天入口
+- `GET /api/tasks`：获取 mission / tasks 列表
+- `GET /api/tasks/:id`：获取 mission 详情
+- `POST /api/tasks/:id/decision`：提交 mission 决策
+- `POST /api/feishu/relay`：接入 OpenClaw relay，请求复杂任务时先 ACK，再进入 staged progress
+- `POST /api/feishu/relay/event`：手动推送 relay progress / waiting / done / failed / decision
+- `POST /api/feishu/webhook`：接入飞书 webhook / 卡片回调
+- `POST /api/executor/events`：接收 lobster executor 回调事件并写回 mission runtime
+
+## Mission 集成
+
+- 前端任务页已挂到 `/tasks` 和 `/tasks/:taskId`，高级模式下会与现有 workflow 视图并存。
+- 服务端同时保留原有 workflow Socket 事件与新 `mission_event`，不会替换旧的 `agent_event`。
+- executor 回调默认走 HMAC-SHA256：服务端校验 `x-cube-executor-timestamp` 与 `x-cube-executor-signature`，签名串格式为 `timestamp.rawBody`。
+- smoke only 路由默认关闭；只有设置 `MISSION_SMOKE_ENABLED=true` 时，`/api/tasks/smoke/dispatch` 和 `/api/tasks/smoke/seed-running` 才会暴露。
+
+### 关键环境变量
+
+- mission / smoke：`MISSION_SMOKE_ENABLED`、`MISSION_SMOKE_SERVER_PORT`、`MISSION_SMOKE_EXECUTOR_PORT`、`MISSION_SMOKE_FEISHU_PORT`、`MISSION_RESTART_SMOKE_PORT`
+- executor callback：`EXECUTOR_CALLBACK_SECRET`、`EXECUTOR_CALLBACK_MAX_SKEW_SECONDS`
+- lobster executor：`LOBSTER_EXECUTOR_BASE_URL`、`LOBSTER_EXECUTOR_HOST`、`LOBSTER_EXECUTOR_PORT`、`LOBSTER_EXECUTOR_DATA_ROOT`、`LOBSTER_EXECUTOR_NAME`
+- Feishu bridge：`FEISHU_ENABLED`、`FEISHU_MODE`、`FEISHU_BASE_TASK_URL`、`FEISHU_PROGRESS_THROTTLE_PERCENT`、`FEISHU_RELAY_SECRET`、`FEISHU_RELAY_MAX_SKEW_SECONDS`、`FEISHU_RELAY_NONCE_TTL_SECONDS`
+- Feishu webhook / delivery：`FEISHU_WEBHOOK_VERIFICATION_TOKEN`、`FEISHU_WEBHOOK_ENCRYPT_KEY`、`FEISHU_WEBHOOK_MAX_SKEW_SECONDS`、`FEISHU_WEBHOOK_DEDUP_TTL_SECONDS`、`FEISHU_WEBHOOK_DEDUP_FILE`、`FEISHU_MESSAGE_FORMAT`、`FEISHU_FINAL_SUMMARY_MODE`、`FEISHU_DELIVERY_MAX_RETRIES`、`FEISHU_DELIVERY_RETRY_BASE_MS`、`FEISHU_DELIVERY_RETRY_MAX_MS`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_TENANT_ACCESS_TOKEN`、`FEISHU_API_BASE_URL`
+
+### Smoke 验证
+
+- 本地总集成 smoke：`node scripts/mission-integration-smoke.mjs`
+- 服务器总集成 smoke：在目标机器上运行同一条命令；脚本会默认自行拉起 fake Feishu、Cube server 和 lobster executor
+- 若目标机已经有 server / executor 进程，也可以配合 `MISSION_SMOKE_NO_SPAWN_SERVER=1`、`MISSION_SMOKE_NO_SPAWN_EXECUTOR=1` 复用现有进程，但现有服务需要已经按 smoke 所需环境变量完成配置
+- 服务重启恢复 smoke：`node scripts/mission-restart-smoke.mjs`
 
 ## 当前边界
 
