@@ -223,7 +223,7 @@ function classifyExecutionIntent(sourceText: string): ExecutionUnderstanding {
         confidence: rule.confidence,
         objective: normalized.slice(0, 220),
         summary: `Request is classified as ${rule.kind} based on matched intent keywords.`,
-        evidence: [...evidence],
+        evidence: Array.from(evidence),
         suggestedMode: rule.suggestedMode || DEFAULT_MODE,
       };
     }
