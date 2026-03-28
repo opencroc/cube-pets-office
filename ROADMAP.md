@@ -99,6 +99,218 @@
 - [x] 合并后的 `main` 已推送到 GitHub 远端。
 - [x] 并行开发用的 3 个本地 worktree 和对应功能分支已删除清理。
 
+## 2026-03-28 增补：Cube Brain + Docker 执行层合并
+
+- [ ] 主定位从“生成 md/json 报告”升级为“真实任务编排 + Docker 实例执行 + 进度回传 + 可视化交付”。
+- [ ] `cube-pets-office` 作为唯一主控 Brain，统一承接 Cube UI 与 Feishu 两个入口。
+- [ ] 第一版执行载体固定为 Docker 容器，后续再评估安卓模拟器 / 完整虚机。
+- [ ] `openclaw-feishu-progress` 本轮只迁移任务状态机、Feishu ACK / relay、任务宇宙 API、`/tasks` 页面与执行协调思想。
+- [ ] scanner / pipeline / codegen / Playwright 报告链路不纳入本轮主线，避免稀释真实执行闭环。
+- [ ] 真实执行任务的核心交付从“默认写 md/json”改为“任务状态、实例信息、日志摘要、工件链接、最终结果”。
+- 执行细则见 `docs/mission-worktree-dual-repo.md`，用于约束多 worktree + 双仓参考的读写边界。
+
+## 并行改造分工（2026-03-28：Cube Brain + Docker 执行层）
+
+### Worktree 0：契约冻结与并行边界
+
+分支：`chore/mission-contracts`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-0-mission-contracts`  
+目标：先冻结新任务域模型、执行器契约、事件模型和目录边界，降低后续 worktree 冲突。  
+主要写入范围：`shared/**` 新增 mission / executor 契约；`docs/**` 新增接口文档；`ROADMAP.md` 同步本轮计划。
+
+可执行清单：
+
+- [ ] 定义 `MissionRecord`、`MissionStage`、`MissionEvent`、`MissionDecision`、`ExecutionPlan`、`ExecutorJobRequest`、`ExecutorEvent`。
+- [ ] 明确命名边界：旧 `workflow/task` 保留给现有编排内核，新 `mission` 专用于真实执行链路，避免和现有 `TaskRecord` 冲突。
+- [ ] 冻结 Cube 与远端执行器的 HTTP 契约：`/health`、`/api/executor/jobs`、`/api/executor/events`。
+- [ ] 冻结前端任务宇宙接口：`/api/tasks`、`/api/tasks/:id`、`/api/tasks/:id/decision`、`/api/planets`、`/api/planets/:id/interior`。
+- [ ] 明确 Socket 事件名和 payload 结构，统一继续走 Cube 现有 Socket.IO，不新增 raw WebSocket 技术栈。
+- [ ] 输出一份“目录所有权清单”，后续 worktree 不并行修改同一批 shared 契约文件。
+
+完成标准：
+
+- [ ] 其余所有 worktree 都基于该分支 rebase / merge 开工。
+- [ ] 后续并行开发不再争抢共享类型文件命名权和接口字段定义权。
+
+### Worktree A：任务域模型 + 状态机 + 持久化
+
+分支：`feat/mission-core`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-A-mission-core`  
+目标：把 `openclaw-feishu-progress` 的任务状态机内核迁入 Cube，并接入本地持久化。  
+主要写入范围：`server/tasks/**`、`server/db/**`、`server/routes/tasks.ts`、`shared/mission/**`。
+
+可执行清单：
+
+- [ ] 新增 `MissionStore`，支持 create / progress / waiting / decision / done / failed / recovery。
+- [ ] 将 mission 数据持久化进 Cube 现有 `data/database.json`，不再依赖 `.opencroc/task-snapshots.json`。
+- [ ] 新增任务 REST API：创建、列表、详情、决策提交、最近事件。
+- [ ] 加入 topic/thread 维度，支持 Feishu 线程与 Cube UI 的同主题聚合。
+- [ ] 为 mission 增加 `executor`、`instance`、`artifacts`、`summary` 字段，承接真实执行结果。
+- [ ] 任务阶段固定为 `receive -> understand -> plan -> provision -> execute -> finalize`。
+- [ ] 加入服务重启后的恢复逻辑，确保运行中 mission 不会静默丢失。
+
+完成标准：
+
+- [ ] 不接执行器也能完整演示 mission 生命周期和等待确认恢复。
+- [ ] `GET /api/tasks` 与 `GET /api/tasks/:id` 返回稳定结构。
+- [ ] 重启服务后 mission 状态和事件可恢复。
+
+### Worktree B：执行器契约 + Docker 参考执行器
+
+分支：`feat/lobster-executor`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-B-lobster-executor`  
+目标：在同仓内提供一个可部署到“龙虾服务器”的 Docker 参考执行器，先打通真实实例创建闭环。  
+主要写入范围：`services/lobster-executor/**`、`docs/executor/**`、`scripts/**` 中的本地联调脚本。
+
+可执行清单：
+
+- [ ] 新增 `services/lobster-executor` 轻量服务，提供 `/health`、`/api/executor/jobs`、可选 `/api/executor/jobs/:id/cancel`。
+- [ ] 实现 Docker 容器创建、启动、超时、退出码判断、日志采集与工件目录挂载。
+- [ ] 执行器将运行进度、完成、失败、等待确认回调到 Cube 的 `/api/executor/events`。
+- [ ] 为执行器与 Cube 之间加入共享密钥签名和时间戳校验。
+- [ ] 明确 Docker 镜像、命令、环境变量、挂载目录和超时参数的最小必填项。
+- [ ] 提供一个本地 mock job 和一个真实 Docker smoke job。
+- [ ] 不在本轮实现资源调度池、多机负载均衡、镜像仓库治理。
+
+完成标准：
+
+- [ ] Cube 发出一个 job 后，执行器能创建 Docker 容器并把阶段回调打回 Cube。
+- [ ] 执行成功和执行失败两条链路都能稳定回调。
+- [ ] 本地和服务器部署说明清晰可复现。
+
+### Worktree C：Brain 规划 + 执行调度
+
+分支：`feat/brain-dispatch`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-C-brain-dispatch`  
+目标：让 Cube 现有动态组织能力真正变成“会下发真实执行计划的大脑”。  
+主要写入范围：`server/core/**` 中新增 `mission-orchestrator`、`executor-client`、计划构建器；少量复用动态组织生成能力。
+
+可执行清单：
+
+- [ ] 新增 `MissionOrchestrator`，不要直接改写现有 `WorkflowEngine` 主链。
+- [ ] 复用动态组织生成能力，让 CEO / manager / worker 参与 `understand` 和 `plan` 阶段，但最终产物必须落成结构化 `ExecutionPlan`。
+- [ ] `ExecutionPlan` 至少包含 `image`、`command`、`env`、`mounts`、`artifacts`、`successCriteria`、`timeoutSec`。
+- [ ] 新增 `ExecutorClient`，按契约把计划发往远端 Docker 执行器。
+- [ ] 规划失败、计划字段缺失、执行器不可达时，mission 必须进入明确失败态，而不是只生成报告文件。
+- [ ] 给真实执行链路增加“等待确认”节点，允许 Brain 在执行前或执行中暂停并请求人工决策。
+- [ ] 保留现有分析型 workflow，不把所有旧 `/api/workflows` 请求强行切到 mission 主线。
+
+完成标准：
+
+- [ ] 一个来自 Cube UI 的任务能走完 `understand -> plan -> dispatch`。
+- [ ] 规划结果是结构化 JSON，不是仅自然语言说明。
+- [ ] 执行器不可达时，错误能在任务详情和事件流中可见。
+
+### Worktree D：Feishu 入口 + ACK / Relay / Progress Bridge
+
+分支：`feat/feishu-mission-bridge`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-D-feishu-mission-bridge`  
+目标：把 `openclaw-feishu-progress` 的飞书桥接能力迁入 Cube，并改写为 Express 版本。  
+主要写入范围：`server/feishu/**`、`server/routes/feishu.ts`、`.env.example`、`README.md` 飞书配置章节。
+
+可执行清单：
+
+- [ ] 迁移 `FeishuProgressBridge`、relay auth、去重、task start、decision resume、done/failed 终态回传。
+- [ ] 将 Fastify 路由重写为 Cube 当前 Express 路由风格。
+- [ ] 新增 `/api/feishu/relay` 与 `/api/feishu/relay/event`，对接 mission 而不是旧 CrocOffice task。
+- [ ] 统一 topicId 生成规则，确保飞书线程、回复链和 Cube `/tasks` 聚合一致。
+- [ ] 支持复杂请求立即 ACK，随后持续发送 progress / waiting / complete / failed。
+- [ ] 保留 `suppressFinalSummary` 等开关，避免上游和 Cube 重复发最终答复。
+- [ ] 本轮先支持文本卡片 / 文本消息，不扩复杂交互卡片工作流。
+
+完成标准：
+
+- [ ] 飞书复杂请求进入后 3 秒内能收到 ACK。
+- [ ] 任务推进、等待确认、完成、失败都能稳定回传飞书。
+- [ ] relay 鉴权、重放保护、重复事件去重都有单测覆盖。
+
+### Worktree E：任务宇宙 UI + 3D 内部视图
+
+分支：`feat/tasks-universe`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-E-tasks-universe`  
+目标：把 `openclaw-feishu-progress` 的 `/tasks` 宇宙页迁入 Cube，并接到 mission 数据源。  
+主要写入范围：`client/src/pages/tasks/**`、`client/src/components/tasks/**`、`client/src/lib/tasks-store.ts`、相关路由与 Socket 订阅。
+
+可执行清单：
+
+- [ ] 迁移任务总览、planet 列表、planet interior、时间线、决策按钮、同主题聚合视图。
+- [ ] 改写数据源，统一从 Cube 的 `/api/tasks`、`/api/planets` 和 Socket.IO 读取。
+- [ ] 在 UI 上展示实例信息、当前镜像、执行日志摘要、工件链接、失败原因。
+- [ ] 让等待确认任务可以直接在详情页完成 decision 提交。
+- [ ] 保持移动端和桌面端都可用，不引入仅适配大屏的布局。
+- [ ] 与现有首页 / workflow 面板共存，不破坏当前 Home 主场景。
+- [ ] 优先保证“信息清晰 + 实时感”，不追求一次性迁完所有视觉细节。
+
+完成标准：
+
+- [ ] `/tasks` 能稳定展示真实 mission，而不是旧 workflow 报告。
+- [ ] 任务详情页可看到阶段、事件、机器人状态、决策入口。
+- [ ] 任务运行中页面无需手动刷新即可看到状态变化。
+
+### Worktree F：整合收口 + 兼容路由 + 验证与部署
+
+分支：`feat/mission-integration`  
+目录：`C:\Users\wangchunji\Documents\cube-pets-office-F-mission-integration`  
+目标：完成新老链路共存、联调、测试、部署和最终收口。  
+主要写入范围：`server/index.ts`、路由注册、Socket 事件桥接、测试、脚本、文档。
+
+可执行清单：
+
+- [ ] 把 A/B/C/D/E 的能力统一接入主服务启动流程。
+- [ ] 新增 mission 相关 Socket 事件并保持旧 workflow 事件不被破坏。
+- [ ] 更新 `.env.example`、README、部署脚本、本地联调脚本。
+- [ ] 加入本地一键 smoke：Cube 创建任务 -> Docker 执行器 -> 回调 -> `/tasks` 可见。
+- [ ] 加入 Feishu smoke：relay -> ACK -> progress -> done / failed。
+- [ ] 加入服务重启恢复 smoke：运行中 mission 重启后状态可恢复或明确失败。
+- [ ] 清理冲突命名、废弃临时 mock、补齐收尾文档。
+
+完成标准：
+
+- [ ] `main` 分支上保留旧 workflow 能力，同时新增 mission 主线。
+- [ ] 本地和服务器各至少跑通一轮真实 Docker 执行闭环。
+- [ ] 所有新接口、事件和环境变量都有文档。
+
+### 合并顺序
+
+- [ ] 先合并 `Worktree 0`，冻结 shared 契约和接口文档。
+- [ ] 然后并行推进 `Worktree A / B / C / D / E`。
+- [ ] `Worktree F` 只在 A/B/C/D/E 主体完成后做总集成，不提前抢改共享入口文件。
+- [ ] 除 `Worktree 0` 外，其余分支禁止并行改同一批 `shared/mission/**` 契约文件。
+- [ ] `server/index.ts`、主路由注册、README 环境变量章节默认归 `Worktree F` 单独持有。
+
+### 集成验收口径
+
+- [ ] Cube UI 创建任务后，能生成 mission，并进入 `receive -> understand -> plan`。
+- [ ] Brain 产出的 `ExecutionPlan` 是结构化对象，不是单纯自然语言。
+- [ ] Cube 能把计划发给远端 Docker 执行器，并收到回调。
+- [ ] `/tasks`、`/planets`、`/planets/:id/interior` 能实时展示运行状态。
+- [ ] 飞书复杂请求能收到 ACK，并持续看到进度、等待确认、完成或失败。
+- [ ] 决策提交接口幂等，重复点击不会把 mission 弄乱。
+- [ ] 服务重启后 mission 不会无声消失。
+- [ ] 真实执行任务的最终交付以状态、日志摘要、工件链接和结果摘要为主，不再默认只产出 md/json。
+
+### 收尾状态
+
+- [ ] `cube-pets-office` 已具备 Brain + Docker 执行 + Feishu 回传 + 任务宇宙可视化的首版闭环。
+- [ ] `openclaw-feishu-progress` 中桥接与执行层核心已迁入 Cube 主线。
+- [ ] scanner / pipeline / codegen / report 仍作为旧能力保留，但不再阻塞真实执行主线。
+- [ ] 所有并行 worktree 都已完成、合并回 `main`、删除本地 worktree 并清理分支。
+
+## Test Plan
+
+- 单测必须覆盖 mission 状态机、决策恢复、执行器回调签名校验、飞书 relay 去重、Express 路由入参校验。
+- 集成测试必须覆盖四条主链：Cube UI 创建任务、Feishu 复杂请求、执行器成功回调、执行器失败回调。
+- 至少保留两个 smoke 脚本：`local-docker-success` 和 `local-docker-failed`。
+- UI 验收必须覆盖桌面端和移动端任务页，不要求视觉完全一致，但必须保证决策、进度、事件流可用。
+- 兼容性验收必须确认旧 `/api/workflows`、现有首页和现有 Socket 事件不被新 mission 链路破坏。
+
+## Assumptions
+
+- 本轮固定以 Docker 作为唯一执行载体；安卓模拟器、完整虚机、K8s 调度不在当前 roadmap 范围内。
+- 远端“龙虾”以同仓参考执行器形式先实现，部署时作为内部执行节点，不作为第二个用户侧产品入口。
+- 新任务链路统一使用 `mission` 命名，旧 `workflow/task` 仅保留给历史分析链路。
+- 任务页实时通信统一沿用 Cube 现有 Socket.IO，不再引入 openclaw 里的 raw WebSocket 方案。
+
 ## 当前实现状态（2026-03-27 更新）
 
 ### 本轮新增完成
